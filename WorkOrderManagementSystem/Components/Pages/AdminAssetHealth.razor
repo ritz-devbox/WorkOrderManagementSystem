@@ -1,0 +1,326 @@
+@page "/admin/asset-health"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Asset Health Dashboard</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1">
+                <i class="bi bi-heart-pulse-fill me-2 text-danger"></i>Asset Health Dashboard
+            </h1>
+            <p class="text-muted">Predictive maintenance insights and cost analysis.</p>
+        </div>
+    </div>
+
+    <!-- Key Metrics -->
+    <div class="row g-4 mb-4">
+        <div class="col-md-3">
+            <div class="card border-0 shadow-glass">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="p-3 rounded-circle bg-danger bg-opacity-10">
+                            <i class="bi bi-exclamation-triangle-fill text-danger fs-3"></i>
+                        </div>
+                    </div>
+                    <h2 class="display-5 fw-bold mb-1">@criticalAssets</h2>
+                    <p class="text-muted mb-0">Critical Assets</p>
+                    <small class="text-danger">Needs immediate attention</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card border-0 shadow-glass">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="p-3 rounded-circle bg-warning bg-opacity-10">
+                            <i class="bi bi-tools text-warning fs-3"></i>
+                        </div>
+                    </div>
+                    <h2 class="display-5 fw-bold mb-1">@totalRepairs</h2>
+                    <p class="text-muted mb-0">Total Repairs</p>
+                    <small class="text-muted">All time</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card border-0 shadow-glass">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="p-3 rounded-circle bg-success bg-opacity-10">
+                            <i class="bi bi-currency-dollar text-success fs-3"></i>
+                        </div>
+                    </div>
+                    <h2 class="display-5 fw-bold mb-1">$@estimatedCost.ToString("N0")</h2>
+                    <p class="text-muted mb-0">Estimated Cost</p>
+                    <small class="text-muted">This month</small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-3">
+            <div class="card border-0 shadow-glass">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-start mb-2">
+                        <div class="p-3 rounded-circle bg-info bg-opacity-10">
+                            <i class="bi bi-graph-up text-info fs-3"></i>
+                        </div>
+                    </div>
+                    <h2 class="display-5 fw-bold mb-1">@healthScore%</h2>
+                    <p class="text-muted mb-0">Overall Health</p>
+                    <small class="text-success">Good condition</small>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Problem Assets -->
+    <div class="card border-0 shadow-glass mb-4">
+        <div class="card-header bg-transparent border-0 pt-4 px-4">
+            <h4 class="mb-0 fw-bold">
+                <i class="bi bi-exclamation-circle me-2 text-danger"></i>Top 5 Problem Assets
+            </h4>
+            <p class="text-muted small mb-0">Assets requiring most attention</p>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0">
+                    <thead class="bg-light">
+                        <tr>
+                            <th>Asset</th>
+                            <th>Category</th>
+                            <th>Location</th>
+                            <th>Repairs (90 days)</th>
+                            <th>Est. Cost</th>
+                            <th>Status</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var asset in problemAssets)
+                        {
+                            var repairCount = asset.WorkOrders.Count;
+                            var status = GetAssetStatus(repairCount);
+                            
+                            <tr>
+                                <td class="fw-bold">@asset.Name</td>
+                                <td>
+                                    <span class="badge bg-light text-dark">@asset.Category?.Name</span>
+                                </td>
+                                <td class="text-muted small">
+                                    <i class="bi bi-building me-1"></i>@(asset.LocationBuilding?.Name ?? "N/A")
+                                </td>
+                                <td>
+                                    <span class="badge bg-danger">@repairCount repairs</span>
+                                </td>
+                                <td class="fw-bold text-danger">$@((repairCount * 150).ToString("N0"))</td>
+                                <td>
+                                    <span class="badge @status.BadgeClass">@status.Text</span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowRecommendation(asset)">
+                                        <i class="bi bi-lightbulb"></i> Recommend
+                                    </button>
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Maintenance Schedule Recommendations -->
+    <div class="card border-0 shadow-glass">
+        <div class="card-header bg-transparent border-0 pt-4 px-4">
+            <h4 class="mb-0 fw-bold">
+                <i class="bi bi-calendar-check me-2 text-primary"></i>Preventive Maintenance Recommendations
+            </h4>
+        </div>
+        <div class="card-body p-4">
+            <div class="row g-3">
+                @foreach (var asset in problemAssets.Take(3))
+                {
+                    var repairCount = asset.WorkOrders.Count;
+                    <div class="col-md-4">
+                        <div class="alert alert-warning border-0 mb-0">
+                            <h6 class="fw-bold mb-2">
+                                <i class="bi bi-exclamation-triangle me-2"></i>@asset.Name
+                            </h6>
+                            <p class="small mb-2">
+                                <strong>@repairCount repairs</strong> in 90 days
+                            </p>
+                            @if (repairCount >= 4)
+                            {
+                                <div class="badge bg-danger text-white">
+                                    <i class="bi bi-arrow-repeat me-1"></i>REPLACE RECOMMENDED
+                                </div>
+                                <p class="small mt-2 mb-0">
+                                    Estimated savings: <strong>$@((repairCount * 50).ToString("N0"))/year</strong>
+                                </p>
+                            }
+                            else if (repairCount >= 2)
+                            {
+                                <div class="badge bg-warning text-dark">
+                                    <i class="bi bi-wrench me-1"></i>SCHEDULE MAINTENANCE
+                                </div>
+                                <p class="small mt-2 mb-0">
+                                    Prevent future failures
+                                </p>
+                            }
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recommendation Modal -->
+@if (showRecommendationModal && selectedAsset != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">Recommendation: @selectedAsset.Name</h5>
+                    <button type="button" class="btn-close" @onclick="CloseRecommendationModal"></button>
+                </div>
+                <div class="modal-body">
+                    @{
+                        var repairs = selectedAsset.WorkOrders.Count;
+                        var estimatedCost = repairs * 150;
+                    }
+                    
+                    <div class="alert alert-info border-0 mb-3">
+                        <h6 class="fw-bold">Analysis</h6>
+                        <ul class="mb-0">
+                            <li><strong>@repairs repairs</strong> in the last 90 days</li>
+                            <li>Estimated cost: <strong>$@estimatedCost.ToString("N0")</strong></li>
+                            <li>Average repair frequency: <strong>@(repairs > 0 ? (90 / repairs) : 0) days</strong></li>
+                        </ul>
+                    </div>
+                    
+                    @if (repairs >= 4)
+                    {
+                        <div class="alert alert-danger border-0">
+                            <h6 class="fw-bold text-danger">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>REPLACEMENT RECOMMENDED
+                            </h6>
+                            <p class="mb-2">This asset is failing frequently. Consider replacement to:</p>
+                            <ul class="mb-0">
+                                <li>Reduce downtime</li>
+                                <li>Lower maintenance costs</li>
+                                <li>Improve reliability</li>
+                            </ul>
+                            <hr />
+                            <p class="mb-0 small">
+                                <strong>Estimated ROI:</strong> Replacement could save $@((repairs * 50).ToString("N0"))/year
+                            </p>
+                        </div>
+                    }
+                    else if (repairs >= 2)
+                    {
+                        <div class="alert alert-warning border-0">
+                            <h6 class="fw-bold text-warning">
+                                <i class="bi bi-wrench me-2"></i>PREVENTIVE MAINTENANCE RECOMMENDED
+                            </h6>
+                            <p class="mb-0">Schedule regular maintenance to prevent future failures.</p>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="alert alert-success border-0">
+                            <h6 class="fw-bold text-success">
+                                <i class="bi bi-check-circle-fill me-2"></i>ASSET IN GOOD CONDITION
+                            </h6>
+                            <p class="mb-0">Continue monitoring. No immediate action required.</p>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-light" @onclick="CloseRecommendationModal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Asset> problemAssets = new();
+    private int criticalAssets = 0;
+    private int totalRepairs = 0;
+    private int estimatedCost = 0;
+    private int healthScore = 85;
+    
+    private bool showRecommendationModal = false;
+    private Asset? selectedAsset;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        var ninetyDaysAgo = DateTime.UtcNow.AddDays(-90);
+        
+        // Get all assets with their recent work orders
+        var allAssets = await Db.Assets
+            .Include(a => a.Category)
+            .Include(a => a.LocationBuilding)
+            .Include(a => a.WorkOrders.Where(wo => wo.Timestamp >= ninetyDaysAgo))
+            .ToListAsync();
+        
+        // Sort by repair frequency
+        problemAssets = allAssets
+            .Where(a => a.WorkOrders.Any())
+            .OrderByDescending(a => a.WorkOrders.Count)
+            .Take(5)
+            .ToList();
+        
+        // Calculate metrics
+        criticalAssets = allAssets.Count(a => a.WorkOrders.Count >= 4);
+        totalRepairs = allAssets.Sum(a => a.WorkOrders.Count);
+        estimatedCost = totalRepairs * 150; // $150 average per repair
+        
+        // Calculate health score (inverse of problem assets)
+        healthScore = Math.Max(50, 100 - (criticalAssets * 10));
+    }
+    
+    private (string BadgeClass, string Text) GetAssetStatus(int repairCount)
+    {
+        if (repairCount >= 4) return ("bg-danger text-white", "CRITICAL");
+        if (repairCount >= 2) return ("bg-warning text-dark", "NEEDS ATTENTION");
+        return ("bg-success text-white", "HEALTHY");
+    }
+    
+    private void ShowRecommendation(Asset asset)
+    {
+        selectedAsset = asset;
+        showRecommendationModal = true;
+    }
+    
+    private void CloseRecommendationModal()
+    {
+        showRecommendationModal = false;
+        selectedAsset = null;
+    }
+}

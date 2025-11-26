@@ -1,0 +1,321 @@
+@page "/admin/locations"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Location Registry</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1">
+                <i class="bi bi-building me-2 text-primary"></i>Location Registry
+            </h1>
+            <p class="text-muted">Manage your buildings, floors, and rooms hierarchy.</p>
+        </div>
+    </div>
+
+    <div class="row g-4 h-100">
+        <!-- Column 1: Buildings -->
+        <div class="col-md-4">
+            <div class="card border-0 shadow-glass h-100">
+                <div class="card-header bg-transparent border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-primary">Buildings</h5>
+                    <button class="btn btn-sm btn-outline-primary rounded-circle" @onclick="ShowAddBuildingModal">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+                <div class="card-body p-0 overflow-auto" style="max-height: 600px;">
+                    <div class="list-group list-group-flush">
+                        @foreach (var building in buildings)
+                        {
+                            <button class="list-group-item list-group-item-action border-0 py-3 px-4 @(selectedBuilding?.Id == building.Id ? "bg-primary bg-opacity-10 text-primary border-start border-4 border-primary" : "")"
+                                    @onclick="() => SelectBuilding(building)">
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <div>
+                                        <div class="fw-bold">@building.Name</div>
+                                        <div class="small text-muted">@building.Address</div>
+                                    </div>
+                                    <i class="bi bi-chevron-right small opacity-50"></i>
+                                </div>
+                            </button>
+                        }
+                        @if (!buildings.Any())
+                        {
+                            <div class="text-center p-4 text-muted small">No buildings found. Add one to start.</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 2: Floors -->
+        <div class="col-md-4">
+            <div class="card border-0 shadow-glass h-100 @(selectedBuilding == null ? "opacity-50" : "")">
+                <div class="card-header bg-transparent border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-info">Floors</h5>
+                    <button class="btn btn-sm btn-outline-info rounded-circle" 
+                            @onclick="ShowAddFloorModal" 
+                            disabled="@(selectedBuilding == null)">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+                <div class="card-body p-0 overflow-auto" style="max-height: 600px;">
+                    @if (selectedBuilding == null)
+                    {
+                        <div class="text-center p-5 text-muted">
+                            <i class="bi bi-arrow-left me-2"></i>Select a building first
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var floor in floors)
+                            {
+                                <button class="list-group-item list-group-item-action border-0 py-3 px-4 @(selectedFloor?.Id == floor.Id ? "bg-info bg-opacity-10 text-info border-start border-4 border-info" : "")"
+                                        @onclick="() => SelectFloor(floor)">
+                                    <div class="d-flex justify-content-between align-items-center">
+                                        <div class="fw-bold">@floor.Name</div>
+                                        <i class="bi bi-chevron-right small opacity-50"></i>
+                                    </div>
+                                </button>
+                            }
+                            @if (!floors.Any())
+                            {
+                                <div class="text-center p-4 text-muted small">No floors added yet.</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Column 3: Rooms -->
+        <div class="col-md-4">
+            <div class="card border-0 shadow-glass h-100 @(selectedFloor == null ? "opacity-50" : "")">
+                <div class="card-header bg-transparent border-0 pt-3 px-3 d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold mb-0 text-success">Rooms</h5>
+                    <button class="btn btn-sm btn-outline-success rounded-circle" 
+                            @onclick="ShowAddRoomModal" 
+                            disabled="@(selectedFloor == null)">
+                        <i class="bi bi-plus-lg"></i>
+                    </button>
+                </div>
+                <div class="card-body p-0 overflow-auto" style="max-height: 600px;">
+                    @if (selectedFloor == null)
+                    {
+                        <div class="text-center p-5 text-muted">
+                            <i class="bi bi-arrow-left me-2"></i>Select a floor first
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="list-group list-group-flush">
+                            @foreach (var room in rooms)
+                            {
+                                <div class="list-group-item border-0 py-3 px-4 d-flex justify-content-between align-items-center">
+                                    <div class="fw-bold">@room.Name</div>
+                                    <button class="btn btn-link text-danger p-0" @onclick="() => DeleteRoom(room)">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </div>
+                            }
+                            @if (!rooms.Any())
+                            {
+                                <div class="text-center p-4 text-muted small">No rooms added yet.</div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Modals -->
+@if (showBuildingModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">Add Building</h5>
+                    <button type="button" class="btn-close" @onclick="() => showBuildingModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Building Name</label>
+                        <input type="text" class="form-control" @bind="newBuilding.Name" placeholder="e.g. Headquarters" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Address</label>
+                        <input type="text" class="form-control" @bind="newBuilding.Address" placeholder="e.g. 123 Main St" />
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-light" @onclick="() => showBuildingModal = false">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveBuilding">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showFloorModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">Add Floor to @selectedBuilding?.Name</h5>
+                    <button type="button" class="btn-close" @onclick="() => showFloorModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Floor Name</label>
+                        <input type="text" class="form-control" @bind="newFloor.Name" placeholder="e.g. 1st Floor, Basement" />
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-light" @onclick="() => showFloorModal = false">Cancel</button>
+                    <button class="btn btn-info text-white" @onclick="SaveFloor">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@if (showRoomModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">Add Room to @selectedFloor?.Name</h5>
+                    <button type="button" class="btn-close" @onclick="() => showRoomModal = false"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Room Name/Number</label>
+                        <input type="text" class="form-control" @bind="newRoom.Name" placeholder="e.g. Room 101, Conf Room A" />
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-light" @onclick="() => showRoomModal = false">Cancel</button>
+                    <button class="btn btn-success" @onclick="SaveRoom">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Building> buildings = new();
+    private List<Floor> floors = new();
+    private List<Room> rooms = new();
+
+    private Building? selectedBuilding;
+    private Floor? selectedFloor;
+
+    private bool showBuildingModal = false;
+    private bool showFloorModal = false;
+    private bool showRoomModal = false;
+
+    private Building newBuilding = new();
+    private Floor newFloor = new();
+    private Room newRoom = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadBuildings();
+        }
+    }
+
+    private async Task LoadBuildings()
+    {
+        buildings = await Db.Buildings.ToListAsync();
+    }
+
+    private async Task SelectBuilding(Building building)
+    {
+        selectedBuilding = building;
+        selectedFloor = null;
+        floors = await Db.Floors.Where(f => f.BuildingId == building.Id).ToListAsync();
+        rooms.Clear();
+    }
+
+    private async Task SelectFloor(Floor floor)
+    {
+        selectedFloor = floor;
+        rooms = await Db.Rooms.Where(r => r.FloorId == floor.Id).ToListAsync();
+    }
+
+    // --- Building Actions ---
+    private void ShowAddBuildingModal()
+    {
+        newBuilding = new Building();
+        showBuildingModal = true;
+    }
+
+    private async Task SaveBuilding()
+    {
+        if (string.IsNullOrWhiteSpace(newBuilding.Name)) return;
+        Db.Buildings.Add(newBuilding);
+        await Db.SaveChangesAsync();
+        await LoadBuildings();
+        showBuildingModal = false;
+    }
+
+    // --- Floor Actions ---
+    private void ShowAddFloorModal()
+    {
+        if (selectedBuilding == null) return;
+        newFloor = new Floor { BuildingId = selectedBuilding.Id };
+        showFloorModal = true;
+    }
+
+    private async Task SaveFloor()
+    {
+        if (string.IsNullOrWhiteSpace(newFloor.Name)) return;
+        Db.Floors.Add(newFloor);
+        await Db.SaveChangesAsync();
+        await SelectBuilding(selectedBuilding!); // Refresh floors
+        showFloorModal = false;
+    }
+
+    // --- Room Actions ---
+    private void ShowAddRoomModal()
+    {
+        if (selectedFloor == null) return;
+        newRoom = new Room { FloorId = selectedFloor.Id };
+        showRoomModal = true;
+    }
+
+    private async Task SaveRoom()
+    {
+        if (string.IsNullOrWhiteSpace(newRoom.Name)) return;
+        Db.Rooms.Add(newRoom);
+        await Db.SaveChangesAsync();
+        await SelectFloor(selectedFloor!); // Refresh rooms
+        showRoomModal = false;
+    }
+
+    private async Task DeleteRoom(Room room)
+    {
+        Db.Rooms.Remove(room);
+        await Db.SaveChangesAsync();
+        await SelectFloor(selectedFloor!);
+    }
+}

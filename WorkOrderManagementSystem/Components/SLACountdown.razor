@@ -1,0 +1,51 @@
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@inject SmartTriageService SmartTriage
+
+@if (WorkOrder?.SLADeadline != null)
+{
+    var timeRemaining = SmartTriage.GetTimeRemaining(WorkOrder.SLADeadline);
+    var isBreached = SmartTriage.IsSLABreached(WorkOrder.SLADeadline);
+    var urgencyClass = GetUrgencyClass(timeRemaining, isBreached);
+    var icon = GetUrgencyIcon(timeRemaining, isBreached);
+    
+    <div class="@urgencyClass d-inline-flex align-items-center gap-1 px-2 py-1 rounded">
+        <i class="bi @icon"></i>
+        @if (isBreached)
+        {
+            <span class="fw-bold">OVERDUE</span>
+        }
+        else if (timeRemaining.TotalHours < 1)
+        {
+            <span class="fw-bold">@((int)timeRemaining.TotalMinutes)m left</span>
+        }
+        else if (timeRemaining.TotalDays < 1)
+        {
+            <span class="fw-bold">@((int)timeRemaining.TotalHours)h @timeRemaining.Minutes%m</span>
+        }
+        else
+        {
+            <span>@((int)timeRemaining.TotalDays)d @timeRemaining.Hours%h</span>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public WorkOrder? WorkOrder { get; set; }
+    
+    private string GetUrgencyClass(TimeSpan remaining, bool isBreached)
+    {
+        if (isBreached) return "badge bg-danger text-white";
+        if (remaining.TotalHours < 2) return "badge bg-danger text-white";
+        if (remaining.TotalHours < 8) return "badge bg-warning text-dark";
+        return "badge bg-success text-white";
+    }
+    
+    private string GetUrgencyIcon(TimeSpan remaining, bool isBreached)
+    {
+        if (isBreached) return "bi-exclamation-triangle-fill";
+        if (remaining.TotalHours < 2) return "bi-alarm-fill";
+        return "bi-clock-fill";
+    }
+}

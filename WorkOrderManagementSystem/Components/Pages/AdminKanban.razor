@@ -1,0 +1,298 @@
+@page "/admin/kanban"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@inject NotificationService Notifications
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Kanban Board</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1">
+                <i class="bi bi-kanban me-2 text-primary"></i>Kanban Board
+            </h1>
+            <p class="text-muted">Visual workflow management - drag & drop to update status.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <select class="form-select" @onchange="FilterByWorker">
+                <option value="">All Workers</option>
+                @foreach (var worker in workers)
+                {
+                    <option value="@worker.Username">@worker.FullName</option>
+                }
+            </select>
+            <select class="form-select" @onchange="FilterByPriority">
+                <option value="">All Priorities</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Kanban Columns -->
+    <div class="row g-4">
+        <!-- NEW Column -->
+        <div class="col-md-4">
+            <div class="card border-0 shadow-glass h-100">
+                <div class="card-header bg-secondary bg-opacity-10 border-0 py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="bi bi-inbox-fill me-2 text-secondary"></i>New
+                        </h5>
+                        <span class="badge bg-secondary">@newOrders.Count</span>
+                    </div>
+                </div>
+                <div class="card-body p-3" style="max-height: 70vh; overflow-y: auto;">
+                    @foreach (var order in newOrders)
+                    {
+                        <div class="card mb-3 border-0 shadow-sm hover-lift" style="cursor: pointer;" @onclick="() => MoveToInProgress(order)">
+                            <div class="card-body p-3">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <span class="badge @GetPriorityBadgeClass(order.Priority)">@order.Priority</span>
+                                    <small class="text-muted">WO-@order.Id.ToString("D3")</small>
+                                </div>
+                                <h6 class="fw-bold mb-2">@order.Description</h6>
+                                <div class="small text-muted mb-2">
+                                    <i class="bi bi-geo-alt me-1"></i>@order.Location
+                                </div>
+                                <div class="small text-muted mb-2">
+                                    <i class="bi bi-tag me-1"></i>@order.Category?.Name
+                                </div>
+                                @if (order.SLADeadline != null)
+                                {
+                                    <div class="mt-2">
+                                        <SLACountdown WorkOrder="order" />
+                                    </div>
+                                }
+                                @if (string.IsNullOrEmpty(order.AssignedTo))
+                                {
+                                    <div class="badge bg-warning text-dark mt-2">
+                                        <i class="bi bi-person-x me-1"></i>Unassigned
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="badge bg-info text-white mt-2">
+                                        <i class="bi bi-person-check me-1"></i>@order.AssignedTo
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    @if (!newOrders.Any())
+                    {
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-inbox fs-1 opacity-25"></i>
+                            <p class="mt-2">No new orders</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- IN PROGRESS Column -->
+        <div class="col-md-4">
+            <div class="card border-0 shadow-glass h-100">
+                <div class="card-header bg-primary bg-opacity-10 border-0 py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="bi bi-hourglass-split me-2 text-primary"></i>In Progress
+                        </h5>
+                        <span class="badge bg-primary">@inProgressOrders.Count</span>
+                    </div>
+                </div>
+                <div class="card-body p-3" style="max-height: 70vh; overflow-y: auto;">
+                    @foreach (var order in inProgressOrders)
+                    {
+                        <div class="card mb-3 border-0 shadow-sm hover-lift" style="cursor: pointer;" @onclick="() => MoveToCompleted(order)">
+                            <div class="card-body p-3">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <span class="badge @GetPriorityBadgeClass(order.Priority)">@order.Priority</span>
+                                    <small class="text-muted">WO-@order.Id.ToString("D3")</small>
+                                </div>
+                                <h6 class="fw-bold mb-2">@order.Description</h6>
+                                <div class="small text-muted mb-2">
+                                    <i class="bi bi-geo-alt me-1"></i>@order.Location
+                                </div>
+                                <div class="small text-muted mb-2">
+                                    <i class="bi bi-tag me-1"></i>@order.Category?.Name
+                                </div>
+                                @if (order.SLADeadline != null)
+                                {
+                                    <div class="mt-2">
+                                        <SLACountdown WorkOrder="order" />
+                                    </div>
+                                }
+                                <div class="badge bg-primary text-white mt-2">
+                                    <i class="bi bi-person-check me-1"></i>@order.AssignedTo
+                                </div>
+                            </div>
+                        </div>
+                    }
+                    @if (!inProgressOrders.Any())
+                    {
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-hourglass fs-1 opacity-25"></i>
+                            <p class="mt-2">No active work</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- COMPLETED Column -->
+        <div class="col-md-4">
+            <div class="card border-0 shadow-glass h-100">
+                <div class="card-header bg-success bg-opacity-10 border-0 py-3">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0 fw-bold">
+                            <i class="bi bi-check-circle-fill me-2 text-success"></i>Completed
+                        </h5>
+                        <span class="badge bg-success">@completedOrders.Count</span>
+                    </div>
+                </div>
+                <div class="card-body p-3" style="max-height: 70vh; overflow-y: auto;">
+                    @foreach (var order in completedOrders)
+                    {
+                        <div class="card mb-3 border-0 shadow-sm opacity-75">
+                            <div class="card-body p-3">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <span class="badge bg-success">Completed</span>
+                                    <small class="text-muted">WO-@order.Id.ToString("D3")</small>
+                                </div>
+                                <h6 class="fw-bold mb-2 text-decoration-line-through">@order.Description</h6>
+                                <div class="small text-muted mb-2">
+                                    <i class="bi bi-geo-alt me-1"></i>@order.Location
+                                </div>
+                                <div class="small text-muted mb-2">
+                                    <i class="bi bi-person-check me-1"></i>@order.AssignedTo
+                                </div>
+                                @if (order.CompletedDate != null)
+                                {
+                                    <div class="small text-success mt-2">
+                                        <i class="bi bi-check-circle me-1"></i>@order.CompletedDate.Value.ToLocalTime().ToString("MMM dd, h:mm tt")
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    @if (!completedOrders.Any())
+                    {
+                        <div class="text-center text-muted py-5">
+                            <i class="bi bi-check-circle fs-1 opacity-25"></i>
+                            <p class="mt-2">No completed orders</p>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<WorkOrder> allOrders = new();
+    private List<WorkOrder> newOrders = new();
+    private List<WorkOrder> inProgressOrders = new();
+    private List<WorkOrder> completedOrders = new();
+    private List<WorkerAccount> workers = new();
+    
+    private string? filterWorker;
+    private string? filterPriority;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        workers = await Db.WorkerAccounts
+            .Where(w => w.Role == Role.Worker && w.IsActive)
+            .ToListAsync();
+        
+        allOrders = await Db.WorkOrders
+            .Include(w => w.Category)
+            .OrderByDescending(w => w.Priority)
+            .ThenBy(w => w.Timestamp)
+            .ToListAsync();
+        
+        ApplyFilters();
+    }
+    
+    private void ApplyFilters()
+    {
+        var filtered = allOrders.AsEnumerable();
+        
+        if (!string.IsNullOrEmpty(filterWorker))
+            filtered = filtered.Where(o => o.AssignedTo == filterWorker);
+            
+        if (!string.IsNullOrEmpty(filterPriority))
+            filtered = filtered.Where(o => o.Priority.ToString() == filterPriority);
+        
+        newOrders = filtered.Where(o => o.Status == WorkOrderStatus.New).ToList();
+        inProgressOrders = filtered.Where(o => o.Status == WorkOrderStatus.InProgress).ToList();
+        completedOrders = filtered.Where(o => o.Status == WorkOrderStatus.Completed).Take(10).ToList();
+    }
+    
+    private async Task MoveToInProgress(WorkOrder order)
+    {
+        order.Status = WorkOrderStatus.InProgress;
+        await Db.SaveChangesAsync();
+        await LoadData();
+        
+        Notifications.SendNotification(
+            "Status Updated",
+            $"WO-{order.Id:D3} moved to In Progress",
+            NotificationType.Info
+        );
+    }
+    
+    private async Task MoveToCompleted(WorkOrder order)
+    {
+        order.Status = WorkOrderStatus.Completed;
+        order.CompletedDate = DateTime.UtcNow;
+        await Db.SaveChangesAsync();
+        await LoadData();
+        
+        Notifications.NotifyWorkOrderCompleted(order);
+    }
+    
+    private async Task FilterByWorker(ChangeEventArgs e)
+    {
+        filterWorker = e.Value?.ToString();
+        ApplyFilters();
+        await Task.CompletedTask;
+    }
+    
+    private async Task FilterByPriority(ChangeEventArgs e)
+    {
+        filterPriority = e.Value?.ToString();
+        ApplyFilters();
+        await Task.CompletedTask;
+    }
+    
+    private string GetPriorityBadgeClass(WorkOrderPriority p) => p switch
+    {
+        WorkOrderPriority.Low => "bg-info",
+        WorkOrderPriority.Medium => "bg-primary",
+        WorkOrderPriority.High => "bg-warning text-dark",
+        WorkOrderPriority.Critical => "bg-danger",
+        _ => "bg-secondary"
+    };
+}

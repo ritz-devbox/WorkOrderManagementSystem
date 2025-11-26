@@ -1,0 +1,228 @@
+@page "/admin/admins"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject AuthService AuthService
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Manage Administrators</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login", true);
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="display-6 fw-bold">
+            <i class="bi bi-shield-lock-fill me-2 text-danger"></i>Manage Administrators
+        </h1>
+        <button class="btn btn-danger shadow-glow rounded-pill" @onclick="ShowAddModal">
+            <i class="bi bi-person-plus-fill me-2"></i>Add Admin
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger border-0 shadow-sm mb-4">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+        </div>
+    }
+
+    <div class="row g-4">
+        @foreach (var admin in admins)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-glass h-100 hover-lift transition-all">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="avatar bg-danger bg-opacity-10 text-danger rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px; font-size: 1.2rem;">
+                                    @(string.IsNullOrEmpty(admin.FullName) ? "?" : admin.FullName.Substring(0, 1))
+                                </div>
+                                <div>
+                                    <h5 class="fw-bold mb-0">@admin.FullName</h5>
+                                    <div class="text-muted small">@admin.Username</div>
+                                </div>
+                            </div>
+                            @if (admin.Username != Session.CurrentUser?.Username)
+                            {
+                                <div class="form-check form-switch">
+                                    <input class="form-check-input" type="checkbox" checked="@admin.IsActive" @onchange="(e) => ToggleActive(admin)">
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="badge bg-success bg-opacity-10 text-success">You</span>
+                            }
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center text-muted small mb-2">
+                                <i class="bi bi-envelope me-2"></i>@(admin.Email ?? "No email")
+                            </div>
+                            <div class="d-flex align-items-center text-muted small">
+                                <i class="bi bi-telephone me-2"></i>@(admin.Phone ?? "No phone")
+                            </div>
+                        </div>
+
+                        <div class="border-top pt-3 mt-3 d-flex justify-content-between align-items-center">
+                            <span class="badge bg-light text-dark border">
+                                <i class="bi bi-clock me-1"></i>Joined @admin.CreatedAt.ToString("MMM yyyy")
+                            </span>
+                            @if (admin.Username != "admin" && admin.Username != Session.CurrentUser?.Username)
+                            {
+                                <button class="btn btn-sm btn-outline-danger border-0" @onclick="() => DeleteAdmin(admin)">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">Add New Administrator</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="newAdmin" OnValidSubmit="AddAdmin">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Full Name</label>
+                            <InputText @bind-Value="newAdmin.FullName" class="form-control bg-light border-0" />
+                            <ValidationMessage For="() => newAdmin.FullName" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Username</label>
+                            <InputText @bind-Value="newAdmin.Username" class="form-control bg-light border-0" />
+                            <ValidationMessage For="() => newAdmin.Username" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Password</label>
+                            <InputText type="password" @bind-Value="password" class="form-control bg-light border-0" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Email</label>
+                            <InputText @bind-Value="newAdmin.Email" class="form-control bg-light border-0" />
+                        </div>
+
+                        <div class="d-grid mt-4">
+                            <button type="submit" class="btn btn-danger shadow-glow">Create Admin Account</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<WorkerAccount> admins = new();
+    private WorkerAccount newAdmin = new();
+    private string password = "";
+    private bool showModal = false;
+    private string errorMessage = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        admins = await Db.WorkerAccounts
+            .Where(w => w.Role == Role.Admin)
+            .OrderByDescending(w => w.CreatedAt)
+            .ToListAsync();
+    }
+
+    private void ShowAddModal()
+    {
+        newAdmin = new WorkerAccount { Role = Role.Admin };
+        password = "";
+        errorMessage = "";
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private async Task AddAdmin()
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            errorMessage = "Password is required.";
+            return;
+        }
+
+        if (await Db.WorkerAccounts.AnyAsync(w => w.Username == newAdmin.Username))
+        {
+            errorMessage = "Username already exists.";
+            return;
+        }
+
+        try
+        {
+            newAdmin.PasswordHash = AuthService.HashPassword(password);
+            newAdmin.CreatedAt = DateTime.UtcNow;
+            newAdmin.IsActive = true;
+
+            Db.WorkerAccounts.Add(newAdmin);
+            await Db.SaveChangesAsync();
+            
+            await LoadData();
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error creating admin: " + ex.Message;
+        }
+    }
+
+    private async Task ToggleActive(WorkerAccount admin)
+    {
+        if (admin.Username == "admin") 
+        {
+            errorMessage = "Cannot deactivate the root admin account.";
+            return;
+        }
+        
+        admin.IsActive = !admin.IsActive;
+        await Db.SaveChangesAsync();
+    }
+
+    private async Task DeleteAdmin(WorkerAccount admin)
+    {
+        if (admin.Username == "admin")
+        {
+            errorMessage = "Cannot delete the root admin account.";
+            return;
+        }
+
+        Db.WorkerAccounts.Remove(admin);
+        await Db.SaveChangesAsync();
+        await LoadData();
+    }
+}

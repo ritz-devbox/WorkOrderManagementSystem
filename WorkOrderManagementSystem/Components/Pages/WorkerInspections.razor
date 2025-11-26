@@ -1,0 +1,248 @@
+@page "/worker/inspections"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.WorkerLayout
+@rendermode InteractiveServer
+
+<PageTitle>My Inspections</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Worker)
+{
+    Nav.NavigateTo("/worker/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1">
+                <i class="bi bi-clipboard-check me-2 text-primary"></i>Inspections
+            </h1>
+            <p class="text-muted">Perform scheduled checks and audits.</p>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Loading inspections...</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var template in templates)
+            {
+                <div class="col-md-6 col-lg-4">
+                    <div class="card border-0 shadow-glass h-100 hover-lift">
+                        <div class="card-body p-4">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <span class="badge bg-light text-dark border">@template.Category?.Name</span>
+                                <span class="badge bg-primary bg-opacity-10 text-primary">@template.Frequency</span>
+                            </div>
+                            <h5 class="fw-bold mb-2">@template.Name</h5>
+                            <p class="text-muted small mb-4">@template.Description</p>
+                            
+                            <button class="btn btn-primary w-100 shadow-glow" @onclick="() => StartInspection(template)">
+                                <i class="bi bi-play-fill me-2"></i>Start Inspection
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Inspection Modal -->
+@if (showInspectionModal && currentRecord != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0 bg-light">
+                    <div>
+                        <h5 class="modal-title fw-bold">@currentTemplate?.Name</h5>
+                        <p class="text-muted small mb-0">Started by @Session.CurrentUser?.FullName at @currentRecord.DateStarted.ToLocalTime().ToString("t")</p>
+                    </div>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Asset Tagging (Phase 2) -->
+                    <div class="mb-4 p-3 bg-primary bg-opacity-10 rounded-3 border border-primary border-opacity-25">
+                        <label class="form-label fw-bold small text-uppercase text-primary mb-2">
+                            <i class="bi bi-qr-code me-2"></i>Asset Tag / Barcode
+                        </label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-white border-end-0"><i class="bi bi-upc-scan"></i></span>
+                            <input type="text" class="form-control border-start-0 ps-0" @bind="currentRecord.AssetBarcode" placeholder="Scan or enter asset ID..." />
+                        </div>
+                        <div class="form-text small">Optional: Link this inspection to a specific asset.</div>
+                    </div>
+
+                    <h6 class="fw-bold mb-3 border-bottom pb-2">Checklist</h6>
+                    
+                    @foreach (var result in currentRecord.Results)
+                    {
+                        <div class="card border-0 shadow-sm mb-3">
+                            <div class="card-body">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <label class="fw-medium">@result.InspectionItem?.Description</label>
+                                    
+                                    @if (result.InspectionItem?.Type == InspectionItemType.PassFail)
+                                    {
+                                        <div class="btn-group" role="group">
+                                            <input type="radio" class="btn-check" name="btnradio_@result.InspectionItemId" id="pass_@result.InspectionItemId" autocomplete="off" 
+                                                   checked="@(result.IsPass == true)" @onchange="() => result.IsPass = true">
+                                            <label class="btn btn-outline-success btn-sm" for="pass_@result.InspectionItemId">Pass</label>
+
+                                            <input type="radio" class="btn-check" name="btnradio_@result.InspectionItemId" id="fail_@result.InspectionItemId" autocomplete="off"
+                                                   checked="@(result.IsPass == false)" @onchange="() => result.IsPass = false">
+                                            <label class="btn btn-outline-danger btn-sm" for="fail_@result.InspectionItemId">Fail</label>
+                                        </div>
+                                    }
+                                </div>
+
+                                @if (result.InspectionItem?.Type == InspectionItemType.Text)
+                                {
+                                    <input type="text" class="form-control form-control-sm mb-2" @bind="result.TextValue" placeholder="Enter value..." />
+                                }
+                                else if (result.InspectionItem?.Type == InspectionItemType.Number)
+                                {
+                                    <input type="number" class="form-control form-control-sm mb-2" @bind="result.NumberValue" placeholder="0.00" />
+                                }
+
+                                <input type="text" class="form-control form-control-sm bg-light border-0" @bind="result.Notes" placeholder="Add notes (optional)..." />
+                                
+                                @if (result.IsPass == false)
+                                {
+                                    <div class="text-danger small mt-2">
+                                        <i class="bi bi-exclamation-circle me-1"></i>
+                                        Marking as "Fail" will automatically create a work order.
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-light" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="btn btn-success shadow-glow" @onclick="SubmitInspection">
+                        <i class="bi bi-check-circle-fill me-2"></i>Submit Inspection
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<InspectionTemplate> templates = new();
+    private bool isLoading = true;
+    private bool showInspectionModal = false;
+    
+    private InspectionTemplate? currentTemplate;
+    private InspectionRecord? currentRecord;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Worker)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        templates = await Db.InspectionTemplates
+            .Include(t => t.Category)
+            .Include(t => t.Items)
+            .ToListAsync();
+        isLoading = false;
+    }
+
+    private void StartInspection(InspectionTemplate template)
+    {
+        currentTemplate = template;
+        currentRecord = new InspectionRecord
+        {
+            InspectionTemplateId = template.Id,
+            WorkerUsername = Session.CurrentUser?.Username ?? "Unknown",
+            DateStarted = DateTime.UtcNow,
+            Results = template.Items.Select(i => new InspectionResult
+            {
+                InspectionItemId = i.Id,
+                InspectionItem = i,
+                IsPass = null // Start as null/unanswered
+            }).ToList()
+        };
+        
+        showInspectionModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showInspectionModal = false;
+        currentRecord = null;
+        currentTemplate = null;
+    }
+
+    private async Task SubmitInspection()
+    {
+        if (currentRecord == null || currentTemplate == null) return;
+
+        currentRecord.DateCompleted = DateTime.UtcNow;
+        
+        // Save the record
+        // Note: We need to be careful with EF tracking here. 
+        // The InspectionItem objects in Results are already tracked or need to be attached.
+        // Simplest way is to just add the record and let EF handle IDs.
+        
+        // We need to clear the navigation property to avoid EF trying to re-add the items
+        foreach (var res in currentRecord.Results)
+        {
+            res.InspectionItem = null; 
+        }
+
+        Db.InspectionRecords.Add(currentRecord);
+        
+        // Auto-Ticket Generation Logic
+        foreach (var result in currentRecord.Results)
+        {
+            if (result.IsPass == false)
+            {
+                // Fetch item description since we cleared the nav prop
+                var itemDesc = currentTemplate.Items.FirstOrDefault(i => i.Id == result.InspectionItemId)?.Description ?? "Unknown Item";
+                
+                var workOrder = new WorkOrder
+                {
+                    Username = "System (Auto-Generated)",
+                    Description = $"Inspection Failure: {itemDesc} - {currentTemplate.Name}",
+                    Location = "See Inspection Record", // Could be improved with Asset Location
+                    CategoryId = currentTemplate.CategoryId,
+                    Priority = WorkOrderPriority.High, // Default to High for failures
+                    Status = WorkOrderStatus.New,
+                    Timestamp = DateTime.UtcNow
+                };
+                
+                if (!string.IsNullOrEmpty(currentRecord.AssetBarcode))
+                {
+                    workOrder.Description += $" (Asset: {currentRecord.AssetBarcode})";
+                }
+                
+                Db.WorkOrders.Add(workOrder);
+            }
+        }
+
+        await Db.SaveChangesAsync();
+        CloseModal();
+        
+        // Optional: Show success toast
+    }
+}

@@ -1,0 +1,180 @@
+@page "/admin/orders"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+@rendermode InteractiveServer
+
+<PageTitle>All Work Orders</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login", true);
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="display-6 fw-bold">
+            <i class="bi bi-clipboard-data me-2 text-danger"></i>All Work Orders
+        </h1>
+        <div class="d-flex gap-2">
+            <div class="input-group shadow-sm" style="width: 300px;">
+                <span class="input-group-text bg-white border-0"><i class="bi bi-search"></i></span>
+                <input type="text" class="form-control border-0" placeholder="Search..." @bind="searchText" @bind:event="oninput" />
+            </div>
+            <select class="form-select shadow-sm border-0" @bind="filterStatus" style="width: auto;">
+                <option value="">All Status</option>
+                @foreach (var s in Enum.GetValues<WorkOrderStatus>())
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-glass">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover mb-0 align-middle">
+                    <thead class="bg-light">
+                        <tr>
+                            <th class="ps-4">ID</th>
+                            <th>Description</th>
+                            <th>Location</th>
+                            <th>Priority</th>
+                            <th>Status</th>
+                            <th>Assigned To</th>
+                            <th>Date</th>
+                            <th class="text-end pe-4">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var order in FilteredOrders)
+                        {
+                            <tr class="hover-lift transition-all">
+                                <td class="ps-4 fw-bold">#@order.Id</td>
+                                <td>
+                                    <div class="fw-semibold text-dark">@order.Description</div>
+                                    <div class="small text-muted">@order.Category?.Name</div>
+                                </td>
+                                <td>@order.Location</td>
+                                <td><span class="badge @GetPriorityBadgeClass(order.Priority)">@order.Priority</span></td>
+                                <td><span class="badge @GetStatusBadgeClass(order.Status)">@order.Status</span></td>
+                                <td>
+                                    @if (!string.IsNullOrEmpty(order.AssignedTo))
+                                    {
+                                        <span class="badge bg-light text-dark border">
+                                            <i class="bi bi-person-fill me-1"></i>@order.AssignedTo
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-warning bg-opacity-10 text-warning">Unassigned</span>
+                                    }
+                                </td>
+                                <td class="text-muted small">@order.Timestamp.ToLocalTime().ToString("MMM dd")</td>
+                                <td class="text-end pe-4">
+                                    @if (string.IsNullOrEmpty(order.AssignedTo))
+                                    {
+                                        <div class="dropdown">
+                                            <button class="btn btn-sm btn-outline-primary dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                                Assign
+                                            </button>
+                                            <ul class="dropdown-menu dropdown-menu-end shadow border-0">
+                                                @foreach (var worker in workers)
+                                                {
+                                                    <li>
+                                                        <button class="dropdown-item" @onclick="() => AssignOrder(order, worker.Username)">
+                                                            @worker.FullName
+                                                        </button>
+                                                    </li>
+                                                }
+                                            </ul>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-sm btn-light text-danger" @onclick="() => UnassignOrder(order)" title="Unassign">
+                                            <i class="bi bi-person-x-fill"></i>
+                                        </button>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<WorkOrder> orders = new();
+    private List<WorkerAccount> workers = new();
+    private string searchText = "";
+    private WorkOrderStatus? filterStatus;
+
+    private IEnumerable<WorkOrder> FilteredOrders => orders
+        .Where(o => (string.IsNullOrEmpty(searchText) || 
+                    o.Description.Contains(searchText, StringComparison.OrdinalIgnoreCase) || 
+                    o.Location.Contains(searchText, StringComparison.OrdinalIgnoreCase)) &&
+                    (!filterStatus.HasValue || o.Status == filterStatus.Value));
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        orders = await Db.WorkOrders
+            .Include(w => w.Category)
+            .OrderByDescending(w => w.Timestamp)
+            .ToListAsync();
+
+        workers = await Db.WorkerAccounts
+            .Where(w => w.Role == Role.Worker && w.IsActive)
+            .ToListAsync();
+    }
+
+    private async Task AssignOrder(WorkOrder order, string username)
+    {
+        order.AssignedTo = username;
+        order.AssignedDate = DateTime.UtcNow;
+        await Db.SaveChangesAsync();
+        // Refresh local state
+        StateHasChanged();
+    }
+
+    private async Task UnassignOrder(WorkOrder order)
+    {
+        order.AssignedTo = null;
+        order.AssignedDate = null;
+        await Db.SaveChangesAsync();
+        StateHasChanged();
+    }
+
+    private string GetPriorityBadgeClass(WorkOrderPriority p) => p switch
+    {
+        WorkOrderPriority.Low => "bg-info bg-opacity-10 text-info",
+        WorkOrderPriority.Medium => "bg-primary bg-opacity-10 text-primary",
+        WorkOrderPriority.High => "bg-warning bg-opacity-10 text-warning",
+        WorkOrderPriority.Critical => "bg-danger bg-opacity-10 text-danger",
+        _ => "bg-secondary"
+    };
+
+    private string GetStatusBadgeClass(WorkOrderStatus s) => s switch
+    {
+        WorkOrderStatus.New => "bg-secondary",
+        WorkOrderStatus.InProgress => "bg-primary",
+        WorkOrderStatus.Completed => "bg-success",
+        _ => "bg-light text-dark"
+    };
+}

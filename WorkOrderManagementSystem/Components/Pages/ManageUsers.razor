@@ -1,0 +1,189 @@
+@page "/users"
+@using WorkOrderManagementSystem.Data
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject NavigationManager Nav
+@rendermode InteractiveServer
+
+<PageTitle>Manage Permissions</PageTitle>
+
+<h3>Manage Permissions</h3>
+<p class="text-muted">Use this page to grant <strong>Admin</strong> or <strong>Worker</strong> privileges. Standard users do not need to be added here.</p>
+
+@if (!isAdmin)
+{
+    <div class="alert alert-danger">Access Denied. You must be an Admin to view this page.</div>
+}
+else
+{
+    <div class="card mb-4">
+        <div class="card-header">Grant Privileges</div>
+        <div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4">
+                    <label class="form-label">Username (DOMAIN\User)</label>
+                    <input type="text" class="form-control" @bind="editingUsername" placeholder="e.g. DOMAIN\jdoe" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Role</label>
+                    <select class="form-select" @bind="editingRole">
+                        <option value="@Role.Worker">Worker</option>
+                        <option value="@Role.Admin">Admin</option>
+                        <option value="@Role.User">User (Remove Privilege)</option>
+                    </select>
+                </div>
+                <div class="col-md-2">
+                    <button class="btn btn-primary w-100" @onclick="SaveUser">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Username</th>
+                <th>Role</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var user in users)
+            {
+                <tr>
+                    <td>@user.Username</td>
+                    <td>
+                        <span class="badge @GetRoleBadgeClass(user.Role)">@user.Role</span>
+                    </td>
+                    <td>
+                        <button class="btn btn-sm btn-secondary me-2" @onclick="() => EditUser(user)">Edit</button>
+                        @if (user.Username != currentUsername) // Prevent deleting self
+                        {
+                            <button class="btn btn-sm btn-danger" @onclick="() => DeleteUser(user.Id)">Revoke</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<UserRole> users = new();
+    private bool isAdmin = false;
+    private string currentUsername = "";
+    
+    // Form fields
+    private string editingUsername = "";
+    private Role editingRole = Role.Worker; // Default to Worker when adding
+    private int? editingId = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try 
+        {
+            currentUsername = System.Security.Principal.WindowsIdentity.GetCurrent()?.Name ?? Environment.UserName;
+        }
+        catch {}
+
+        // Check if current user is Admin
+        var currentUserRole = await Db.UserRoles.FirstOrDefaultAsync(u => u.Username == currentUsername);
+        if (currentUserRole?.Role == Role.Admin)
+        {
+            isAdmin = true;
+            await LoadUsers();
+        }
+    }
+
+    private async Task LoadUsers()
+    {
+        users = await Db.UserRoles.OrderBy(u => u.Username).ToListAsync();
+    }
+
+    private void EditUser(UserRole user)
+    {
+        editingId = user.Id;
+        editingUsername = user.Username;
+        editingRole = user.Role;
+    }
+
+    private async Task SaveUser()
+    {
+        if (string.IsNullOrWhiteSpace(editingUsername)) return;
+
+        // If Role is User, we actually want to DELETE the record (revoke privileges)
+        if (editingRole == Role.User)
+        {
+            if (editingId.HasValue)
+            {
+                await DeleteUser(editingId.Value);
+            }
+            else
+            {
+                // Check if exists by name and delete
+                var existing = await Db.UserRoles.FirstOrDefaultAsync(u => u.Username == editingUsername);
+                if (existing != null)
+                {
+                    Db.UserRoles.Remove(existing);
+                    await Db.SaveChangesAsync();
+                }
+            }
+        }
+        else
+        {
+            // Adding Admin or Worker
+            if (editingId.HasValue)
+            {
+                var existing = await Db.UserRoles.FindAsync(editingId.Value);
+                if (existing != null)
+                {
+                    existing.Username = editingUsername;
+                    existing.Role = editingRole;
+                    await Db.SaveChangesAsync();
+                }
+            }
+            else
+            {
+                // Check if user already exists
+                var existing = await Db.UserRoles.FirstOrDefaultAsync(u => u.Username == editingUsername);
+                if (existing != null)
+                {
+                    existing.Role = editingRole;
+                }
+                else
+                {
+                    Db.UserRoles.Add(new UserRole 
+                    { 
+                        Username = editingUsername, 
+                        Role = editingRole 
+                    });
+                }
+                await Db.SaveChangesAsync();
+            }
+        }
+
+        editingId = null;
+        editingUsername = "";
+        editingRole = Role.Worker;
+        await LoadUsers();
+    }
+
+    private async Task DeleteUser(int id)
+    {
+        var user = await Db.UserRoles.FindAsync(id);
+        if (user != null)
+        {
+            Db.UserRoles.Remove(user);
+            await Db.SaveChangesAsync();
+            await LoadUsers();
+        }
+    }
+
+    private string GetRoleBadgeClass(Role role) => role switch
+    {
+        Role.Admin => "bg-danger",
+        Role.Worker => "bg-warning text-dark",
+        Role.User => "bg-info text-dark",
+        _ => "bg-secondary"
+    };
+}

@@ -1,0 +1,140 @@
+@page "/admin/skills"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Manage Skills</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1">
+                <i class="bi bi-award-fill me-2 text-primary"></i>Skills Management
+            </h1>
+            <p class="text-muted">Define worker competencies for smart assignment.</p>
+        </div>
+        <button class="btn btn-primary shadow-glow" @onclick="ShowAddModal">
+            <i class="bi bi-plus-lg me-2"></i>New Skill
+        </button>
+    </div>
+
+    <div class="row g-4">
+        @foreach (var skill in skills)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-glass h-100">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h5 class="fw-bold mb-1">@skill.Name</h5>
+                                <p class="text-muted small mb-0">@skill.Description</p>
+                            </div>
+                            <button class="btn btn-link text-danger p-0" @onclick="() => DeleteSkill(skill.Id)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        
+                        <div class="border-top pt-3">
+                            <div class="d-flex align-items-center text-muted small">
+                                <i class="bi bi-people-fill me-2"></i>
+                                <span>@skill.WorkerSkills.Count worker(s) certified</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Add Skill Modal -->
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">New Skill</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Skill Name</label>
+                        <input type="text" class="form-control" @bind="newSkill.Name" placeholder="e.g. Electrical Wiring" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description (Optional)</label>
+                        <textarea class="form-control" @bind="newSkill.Description" rows="2" placeholder="Brief description..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-light" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveSkill">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Skill> skills = new();
+    private bool showModal = false;
+    private Skill newSkill = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        skills = await Db.Skills
+            .Include(s => s.WorkerSkills)
+            .ToListAsync();
+    }
+
+    private void ShowAddModal()
+    {
+        newSkill = new Skill();
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private async Task SaveSkill()
+    {
+        if (string.IsNullOrWhiteSpace(newSkill.Name)) return;
+
+        Db.Skills.Add(newSkill);
+        await Db.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteSkill(int id)
+    {
+        var skill = await Db.Skills.FindAsync(id);
+        if (skill != null)
+        {
+            Db.Skills.Remove(skill);
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+}

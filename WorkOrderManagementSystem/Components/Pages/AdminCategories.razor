@@ -1,0 +1,177 @@
+@page "/admin/categories"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Manage Categories</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1">
+                <i class="bi bi-tags-fill me-2 text-primary"></i>Category Management
+            </h1>
+            <p class="text-muted">Organize work orders with hierarchical categories.</p>
+        </div>
+        <button class="btn btn-primary shadow-glow" @onclick="ShowAddModal">
+            <i class="bi bi-plus-lg me-2"></i>New Category
+        </button>
+    </div>
+
+    <div class="row g-4">
+        @foreach (var category in rootCategories)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-glass h-100">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <h5 class="fw-bold mb-0">@category.Name</h5>
+                            <div class="dropdown">
+                                <button class="btn btn-link text-muted p-0" type="button" data-bs-toggle="dropdown">
+                                    <i class="bi bi-three-dots-vertical"></i>
+                                </button>
+                                <ul class="dropdown-menu dropdown-menu-end border-0 shadow-sm">
+                                    <li><button class="dropdown-item" @onclick="() => ShowAddSubCategoryModal(category)"><i class="bi bi-plus me-2"></i>Add Sub-Category</button></li>
+                                    <li><button class="dropdown-item text-danger" @onclick="() => DeleteCategory(category.Id)"><i class="bi bi-trash me-2"></i>Delete</button></li>
+                                </ul>
+                            </div>
+                        </div>
+                        
+                        @if (category.SubCategories.Any())
+                        {
+                            <div class="bg-light rounded-3 p-3">
+                                <div class="small fw-bold text-uppercase text-muted mb-2">Sub-Categories</div>
+                                <ul class="list-unstyled mb-0 small">
+                                    @foreach (var sub in category.SubCategories)
+                                    {
+                                        <li class="mb-1 d-flex justify-content-between align-items-center">
+                                            <span><i class="bi bi-arrow-return-right me-2 text-muted"></i>@sub.Name</span>
+                                            <button class="btn btn-link btn-sm text-danger p-0" @onclick="() => DeleteCategory(sub.Id)">
+                                                <i class="bi bi-x-lg"></i>
+                                            </button>
+                                        </li>
+                                    }
+                                </ul>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-muted small text-center py-2">No sub-categories</div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Add Category Modal -->
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">@(selectedParent == null ? "New Category" : $"New Sub-Category under {selectedParent.Name}")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Category Name</label>
+                        <input type="text" class="form-control" @bind="newCategoryName" placeholder="e.g. Electrical, Plumbing" />
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-light" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveCategory">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Category> rootCategories = new();
+    private bool showModal = false;
+    private string newCategoryName = "";
+    private Category? selectedParent;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        rootCategories = await Db.Categories
+            .Where(c => c.ParentCategoryId == null)
+            .Include(c => c.SubCategories)
+            .ToListAsync();
+    }
+
+    private void ShowAddModal()
+    {
+        selectedParent = null;
+        newCategoryName = "";
+        showModal = true;
+    }
+
+    private void ShowAddSubCategoryModal(Category parent)
+    {
+        selectedParent = parent;
+        newCategoryName = "";
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private async Task SaveCategory()
+    {
+        if (string.IsNullOrWhiteSpace(newCategoryName)) return;
+
+        var category = new Category
+        {
+            Name = newCategoryName,
+            ParentCategoryId = selectedParent?.Id
+        };
+
+        Db.Categories.Add(category);
+        await Db.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteCategory(int id)
+    {
+        var category = await Db.Categories
+            .Include(c => c.SubCategories)
+            .FirstOrDefaultAsync(c => c.Id == id);
+            
+        if (category != null)
+        {
+            // Check if used in work orders
+            var hasOrders = await Db.WorkOrders.AnyAsync(w => w.CategoryId == id);
+            if (hasOrders) return; // Silently fail or show error
+            
+            Db.Categories.Remove(category);
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+}

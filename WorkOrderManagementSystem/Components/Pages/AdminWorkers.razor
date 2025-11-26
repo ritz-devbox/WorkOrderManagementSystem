@@ -1,0 +1,322 @@
+@page "/admin/workers"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject AuthService AuthService
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Manage Workers</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login", true);
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="display-6 fw-bold">
+            <i class="bi bi-people-fill me-2 text-danger"></i>Manage Workers
+        </h1>
+        <button class="btn btn-primary shadow-glow rounded-pill" @onclick="ShowAddModal">
+            <i class="bi bi-person-plus-fill me-2"></i>Add Worker
+        </button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger border-0 shadow-sm mb-4">
+            <i class="bi bi-exclamation-triangle-fill me-2"></i>@errorMessage
+        </div>
+    }
+
+    <div class="row g-4">
+        @foreach (var worker in workers)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-glass h-100 hover-lift transition-all">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div class="d-flex align-items-center">
+                                <div class="avatar bg-primary bg-opacity-10 text-primary rounded-circle d-flex align-items-center justify-content-center me-3" style="width: 48px; height: 48px; font-size: 1.2rem;">
+                                    @(string.IsNullOrEmpty(worker.FullName) ? "?" : worker.FullName.Substring(0, 1))
+                                </div>
+                                <div>
+                                    <h5 class="fw-bold mb-0">@worker.FullName</h5>
+                                    <div class="text-muted small">@worker.Username</div>
+                                </div>
+                            </div>
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" checked="@worker.IsActive" @onchange="(e) => ToggleActive(worker)">
+                            </div>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <div class="d-flex align-items-center text-muted small mb-2">
+                                <i class="bi bi-envelope me-2"></i>@(worker.Email ?? "No email")
+                            </div>
+                            <div class="d-flex align-items-center text-muted small">
+                                <i class="bi bi-telephone me-2"></i>@(worker.Phone ?? "No phone")
+                            </div>
+                        </div>
+
+                        <!-- Skills Section -->
+                        @if (worker.WorkerSkills.Any())
+                        {
+                            <div class="mb-3">
+                                <div class="small fw-bold text-uppercase text-muted mb-2">Skills</div>
+                                <div class="d-flex flex-wrap gap-1">
+                                    @foreach (var ws in worker.WorkerSkills)
+                                    {
+                                        <span class="badge bg-primary bg-opacity-10 text-primary">@ws.Skill?.Name</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+
+                        <div class="border-top pt-3 mt-3 d-flex justify-content-between align-items-center">
+                            <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowManageSkillsModal(worker)">
+                                <i class="bi bi-award me-1"></i>Manage Skills
+                            </button>
+                            <button class="btn btn-sm btn-outline-danger border-0" @onclick="() => DeleteWorker(worker)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">Add New Worker</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <EditForm Model="newWorker" OnValidSubmit="AddWorker">
+                        <DataAnnotationsValidator />
+                        
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Full Name</label>
+                            <InputText @bind-Value="newWorker.FullName" class="form-control bg-light border-0" />
+                            <ValidationMessage For="() => newWorker.FullName" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Username</label>
+                            <InputText @bind-Value="newWorker.Username" class="form-control bg-light border-0" />
+                            <ValidationMessage For="() => newWorker.Username" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Password</label>
+                            <InputText type="password" @bind-Value="password" class="form-control bg-light border-0" />
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-bold text-muted">Email</label>
+                            <InputText @bind-Value="newWorker.Email" class="form-control bg-light border-0" />
+                        </div>
+
+                        <div class="d-grid mt-4">
+                            <button type="submit" class="btn btn-primary shadow-glow">Create Account</button>
+                        </div>
+                    </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Manage Skills Modal -->
+@if (showSkillsModal && selectedWorker != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">Manage Skills - @selectedWorker.FullName</h5>
+                    <button type="button" class="btn-close" @onclick="CloseSkillsModal"></button>
+                </div>
+                <div class="modal-body">
+                    @foreach (var skill in allSkills)
+                    {
+                        var isAssigned = selectedWorkerSkills.Contains(skill.Id);
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" 
+                                   checked="@isAssigned" 
+                                   @onchange="(e) => ToggleSkill(skill.Id, (bool)e.Value!)">
+                            <label class="form-check-label">
+                                @skill.Name
+                            </label>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-primary" @onclick="SaveWorkerSkills">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<WorkerAccount> workers = new();
+    private WorkerAccount newWorker = new();
+    private string password = "";
+    private bool showModal = false;
+    private string errorMessage = "";
+    
+    // Skills management
+    private bool showSkillsModal = false;
+    private WorkerAccount? selectedWorker;
+    private List<Skill> allSkills = new();
+    private HashSet<int> selectedWorkerSkills = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        workers = await Db.WorkerAccounts
+            .Where(w => w.Role == Role.Worker)
+            .Include(w => w.WorkerSkills)
+                .ThenInclude(ws => ws.Skill)
+            .OrderByDescending(w => w.CreatedAt)
+            .ToListAsync();
+            
+        allSkills = await Db.Skills.ToListAsync();
+    }
+
+    private void ShowAddModal()
+    {
+        newWorker = new WorkerAccount { Role = Role.Worker };
+        password = "";
+        errorMessage = "";
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private async Task AddWorker()
+    {
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            errorMessage = "Password is required.";
+            return;
+        }
+
+        if (await Db.WorkerAccounts.AnyAsync(w => w.Username == newWorker.Username))
+        {
+            errorMessage = "Username already exists.";
+            return;
+        }
+
+        try
+        {
+            newWorker.PasswordHash = AuthService.HashPassword(password);
+            newWorker.CreatedAt = DateTime.UtcNow;
+            newWorker.IsActive = true;
+
+            Db.WorkerAccounts.Add(newWorker);
+            await Db.SaveChangesAsync();
+            
+            await LoadData();
+            CloseModal();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Error creating worker: " + ex.Message;
+        }
+    }
+
+    private async Task ToggleActive(WorkerAccount worker)
+    {
+        worker.IsActive = !worker.IsActive;
+        await Db.SaveChangesAsync();
+    }
+
+    private async Task DeleteWorker(WorkerAccount worker)
+    {
+        // Check if worker has assigned orders
+        var hasOrders = await Db.WorkOrders.AnyAsync(w => w.AssignedTo == worker.Username && w.Status != WorkOrderStatus.Completed);
+        if (hasOrders)
+        {
+            errorMessage = $"Cannot delete {worker.FullName} because they have active work orders.";
+            return;
+        }
+
+        Db.WorkerAccounts.Remove(worker);
+        await Db.SaveChangesAsync();
+        await LoadData();
+    }
+    
+    // Skills Management
+    private void ShowManageSkillsModal(WorkerAccount worker)
+    {
+        selectedWorker = worker;
+        selectedWorkerSkills = worker.WorkerSkills.Select(ws => ws.SkillId).ToHashSet();
+        showSkillsModal = true;
+    }
+    
+    private void CloseSkillsModal()
+    {
+        showSkillsModal = false;
+        selectedWorker = null;
+        selectedWorkerSkills.Clear();
+    }
+    
+    private void ToggleSkill(int skillId, bool isChecked)
+    {
+        if (isChecked)
+            selectedWorkerSkills.Add(skillId);
+        else
+            selectedWorkerSkills.Remove(skillId);
+    }
+    
+    private async Task SaveWorkerSkills()
+    {
+        if (selectedWorker == null) return;
+        
+        var worker = await Db.WorkerAccounts
+            .Include(w => w.WorkerSkills)
+            .FirstOrDefaultAsync(w => w.Id == selectedWorker.Id);
+            
+        if (worker != null)
+        {
+            // Remove old skills
+            Db.WorkerSkills.RemoveRange(worker.WorkerSkills);
+            
+            // Add new skills
+            foreach (var skillId in selectedWorkerSkills)
+            {
+                worker.WorkerSkills.Add(new WorkerSkill
+                {
+                    WorkerAccountId = worker.Id,
+                    SkillId = skillId
+                });
+            }
+            
+            await Db.SaveChangesAsync();
+            await LoadData();
+            CloseSkillsModal();
+        }
+    }
+}

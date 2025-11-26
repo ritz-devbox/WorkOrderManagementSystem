@@ -1,0 +1,26 @@
+﻿@inherits LayoutComponentBase
+
+<div class="page">
+    <div class="sidebar">
+        <NavMenu />
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <div class="user-profile">
+                <span class="bi bi-person-circle me-2"></span>
+                <span class="fw-bold">@System.Security.Principal.WindowsIdentity.GetCurrent().Name</span>
+            </div>
+        </div>
+
+        <article class="content px-4 animate-fade-in">
+            @Body
+        </article>
+    </main>
+</div>
+
+<div id="blazor-error-ui">
+    An unhandled error has occurred.
+    <a href="" class="reload">Reload</a>
+    <a class="dismiss">🗙</a>
+</div>

@@ -1,0 +1,38 @@
+@inherits LayoutComponentBase
+
+<div class="public-layout">
+    <header class="site-header glass-header sticky-top">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center py-3">
+                <a href="/" class="brand-logo text-decoration-none d-flex align-items-center">
+                    <div class="logo-icon me-2">
+                        <i class="bi bi-building-gear text-primary"></i>
+                    </div>
+                    <span class="fw-bold text-dark h5 mb-0">Work Order System</span>
+                </a>
+                <nav class="d-flex align-items-center gap-3">
+                    <NavLink href="/" class="nav-link text-dark fw-medium" Match="NavLinkMatch.All">
+                        Create Request
+                    </NavLink>
+                    <NavLink href="/track" class="nav-link text-dark fw-medium">
+                        Track Status
+                    </NavLink>
+                    <div class="vr mx-2"></div>
+                    <a href="/worker/login" class="btn btn-outline-primary rounded-pill btn-sm px-3">
+                        <i class="bi bi-person-badge me-1"></i>Worker Login
+                    </a>
+                </nav>
+            </div>
+        </div>
+    </header>
+
+    <main class="container py-5 animate-fade-in">
+        @Body
+    </main>
+
+    <footer class="site-footer py-4 text-center text-muted small border-top mt-auto">
+        <div class="container">
+            <p class="mb-0">&copy; @DateTime.Now.Year Work Order Management System. All rights reserved.</p>
+        </div>
+    </footer>
+</div>

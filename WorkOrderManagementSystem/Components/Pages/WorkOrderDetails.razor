@@ -1,0 +1,341 @@
+@page "/worker/order/{Id:int}"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject FileService FileService
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.WorkerLayout
+@rendermode InteractiveServer
+
+<PageTitle>Work Order Details</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Worker)
+{
+    Nav.NavigateTo("/worker/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="mb-4">
+        <a href="/worker/dashboard" class="text-decoration-none text-muted hover-primary">
+            <i class="bi bi-arrow-left me-1"></i>Back to Dashboard
+        </a>
+    </div>
+
+    @if (order == null)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Loading order details...</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <!-- Order Details -->
+            <div class="col-lg-8">
+                <div class="card border-0 shadow-glass mb-4">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start mb-4">
+                            <div>
+                                <h2 class="fw-bold mb-2">@order.Description</h2>
+                                <div class="d-flex gap-2">
+                                    <span class="badge @GetPriorityBadgeClass(order.Priority)">@order.Priority Priority</span>
+                                    <span class="badge @GetStatusBadgeClass(order.Status)">@order.Status</span>
+                                    <span class="badge bg-light text-dark">@order.Category?.Name</span>
+                                </div>
+                            </div>
+                            <div class="text-end text-muted small">
+                                <div><i class="bi bi-calendar3 me-1"></i>@order.Timestamp.ToLocalTime().ToString("MMM dd, yyyy")</div>
+                                <div><i class="bi bi-clock me-1"></i>@order.Timestamp.ToLocalTime().ToString("t")</div>
+                            </div>
+                        </div>
+
+                        <div class="row g-4 mb-4">
+                            <div class="col-md-6">
+                                <div class="p-3 bg-light rounded-3">
+                                    <label class="small text-muted fw-bold text-uppercase mb-1">Location</label>
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-geo-alt text-danger me-2"></i>
+                                        <span class="fw-medium">@order.Location</span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="p-3 bg-light rounded-3">
+                                    <label class="small text-muted fw-bold text-uppercase mb-1">Customer</label>
+                                    <div class="d-flex align-items-center">
+                                        <i class="bi bi-person text-primary me-2"></i>
+                                        <span class="fw-medium">@order.Username</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Photo Gallery -->
+                        <h5 class="fw-bold mb-3"><i class="bi bi-images me-2 text-primary"></i>Photo Evidence</h5>
+                        
+                        @if (attachments.Any())
+                        {
+                            <div class="row g-3 mb-4">
+                                @foreach (var file in attachments)
+                                {
+                                    <div class="col-6 col-md-4 col-lg-3">
+                                        <div class="position-relative group-hover">
+                                            <a href="@file.FilePath" target="_blank">
+                                                <img src="@file.FilePath" class="img-fluid rounded-3 shadow-sm border" style="height: 150px; width: 100%; object-fit: cover;" />
+                                            </a>
+                                            <div class="position-absolute bottom-0 start-0 w-100 p-2 bg-dark bg-opacity-75 text-white small rounded-bottom-3 text-truncate">
+                                                @file.FileName
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="text-center py-4 bg-light rounded-3 border border-dashed mb-4">
+                                <i class="bi bi-camera text-muted fs-2"></i>
+                                <p class="text-muted small mt-2 mb-0">No photos uploaded yet</p>
+                            </div>
+                        }
+
+                        <!-- Signature Section -->
+                        @if (!string.IsNullOrEmpty(order.SignatureData))
+                        {
+                            <div class="alert alert-success border-0 shadow-sm d-flex align-items-center mt-4">
+                                <div class="p-2 bg-success bg-opacity-25 rounded-circle me-3 text-success">
+                                    <i class="bi bi-patch-check-fill fs-4"></i>
+                                </div>
+                                <div>
+                                    <h6 class="fw-bold mb-0 text-success">Work Completed & Signed</h6>
+                                    <div class="small text-muted">
+                                        @order.SignatureData
+                                        <br/>
+                                        <span class="opacity-75">@order.CompletedDate?.ToLocalTime().ToString("MMM dd, yyyy h:mm tt")</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+
+                        <!-- Upload Section -->
+                        <div class="card bg-light border-0">
+                            <div class="card-body">
+                                <h6 class="fw-bold mb-3">Upload New Photo</h6>
+                                <InputFile OnChange="HandleFileSelected" class="form-control" accept="image/*" />
+                                @if (isUploading)
+                                {
+                                    <div class="mt-2 text-primary small">
+                                        <span class="spinner-border spinner-border-sm me-1"></span> Uploading...
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Actions Sidebar -->
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-glass sticky-top" style="top: 2rem;">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold mb-4">Actions</h5>
+                        
+                        <div class="d-grid gap-3">
+                            @if (order.Status == WorkOrderStatus.New)
+                            {
+                                <button class="btn btn-primary py-3 shadow-glow" @onclick="StartWork">
+                                    <i class="bi bi-play-fill me-2"></i>Start Work
+                                </button>
+                            }
+                            else if (order.Status == WorkOrderStatus.InProgress)
+                            {
+                                <button class="btn btn-success py-3 shadow-glow" @onclick="ShowConfirmationModal">
+                                    <i class="bi bi-check-circle-fill me-2"></i>Mark Complete
+                                </button>
+                            }
+                            else if (order.Status == WorkOrderStatus.Completed)
+                            {
+                                <div class="alert alert-success border-0 mb-0">
+                                    <i class="bi bi-check-circle-fill me-2"></i>Work Completed
+                                </div>
+                            }
+                        </div>
+
+                        <hr class="my-4" />
+
+                        <div class="small text-muted">
+                            <i class="bi bi-info-circle me-1"></i>
+                            Upload "Before" photos before starting, and "After" photos before completing.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    <!-- Completion Confirmation Modal -->
+    @if (showConfirmationModal)
+    {
+        <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-dialog-centered">
+                <div class="modal-content border-0 shadow-lg">
+                    <div class="modal-header border-0">
+                        <h5 class="modal-title fw-bold">Confirm Completion</h5>
+                        <button type="button" class="btn-close" @onclick="CloseConfirmationModal"></button>
+                    </div>
+                    <div class="modal-body text-center">
+                        <div class="mb-4">
+                            <div class="avatar bg-success bg-opacity-10 text-success rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 64px; height: 64px;">
+                                <i class="bi bi-check-lg fs-2"></i>
+                            </div>
+                            <h5 class="fw-bold">Mark Work as Complete?</h5>
+                            <p class="text-muted small">This action will digitally sign the work order.</p>
+                        </div>
+                        
+                        <div class="card bg-light border-0 p-3 mb-3">
+                            <div class="d-flex justify-content-between mb-2">
+                                <span class="text-muted small">Signed By:</span>
+                                <span class="fw-bold small">@Session.CurrentUser?.FullName</span>
+                            </div>
+                            <div class="d-flex justify-content-between">
+                                <span class="text-muted small">Timestamp:</span>
+                                <span class="fw-bold small">@DateTime.Now.ToString("g")</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer border-0">
+                        <button type="button" class="btn btn-light" @onclick="CloseConfirmationModal">Cancel</button>
+                        <button type="button" class="btn btn-success shadow-glow" @onclick="ConfirmCompletion">
+                            <i class="bi bi-check-circle-fill me-2"></i>Confirm & Complete
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public int Id { get; set; }
+
+    [Inject] IJSRuntime JS { get; set; }
+
+    private WorkOrder? order;
+    private List<WorkOrderAttachment> attachments = new();
+    private bool isUploading = false;
+    private bool showConfirmationModal = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Worker)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        order = await Db.WorkOrders
+            .Include(w => w.Category)
+            .FirstOrDefaultAsync(w => w.Id == Id);
+
+        if (order != null)
+        {
+            attachments = await Db.WorkOrderAttachments
+                .Where(a => a.WorkOrderId == Id)
+                .OrderByDescending(a => a.UploadedAt)
+                .ToListAsync();
+        }
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        if (order == null) return;
+
+        isUploading = true;
+        try
+        {
+            var file = e.File;
+            var path = await FileService.UploadFileAsync(file);
+
+            var attachment = new WorkOrderAttachment
+            {
+                WorkOrderId = order.Id,
+                FileName = file.Name,
+                FilePath = path,
+                ContentType = file.ContentType,
+                FileSize = file.Size,
+                UploadedBy = Session.CurrentUser?.Username ?? "Unknown",
+                UploadedAt = DateTime.UtcNow
+            };
+
+            Db.WorkOrderAttachments.Add(attachment);
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Upload error: {ex.Message}");
+        }
+        finally
+        {
+            isUploading = false;
+        }
+    }
+
+    private async Task StartWork()
+    {
+        if (order != null)
+        {
+            order.Status = WorkOrderStatus.InProgress;
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+
+    private void ShowConfirmationModal()
+    {
+        showConfirmationModal = true;
+    }
+
+    private void CloseConfirmationModal()
+    {
+        showConfirmationModal = false;
+    }
+
+    private async Task ConfirmCompletion()
+    {
+        if (order != null)
+        {
+            // Save text-based digital signature
+            order.SignatureData = $"Digitally signed by {Session.CurrentUser?.FullName} ({Session.CurrentUser?.Username})"; 
+            order.Status = WorkOrderStatus.Completed;
+            order.CompletedDate = DateTime.UtcNow;
+            
+            await Db.SaveChangesAsync();
+            await LoadData();
+            showConfirmationModal = false;
+        }
+    }
+
+    private string GetPriorityBadgeClass(WorkOrderPriority p) => p switch
+    {
+        WorkOrderPriority.Low => "bg-info",
+        WorkOrderPriority.Medium => "bg-primary",
+        WorkOrderPriority.High => "bg-warning text-dark",
+        WorkOrderPriority.Critical => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private string GetStatusBadgeClass(WorkOrderStatus s) => s switch
+    {
+        WorkOrderStatus.New => "bg-secondary",
+        WorkOrderStatus.InProgress => "bg-primary",
+        WorkOrderStatus.Completed => "bg-success",
+        _ => "bg-light text-dark"
+    };
+}

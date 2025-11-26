@@ -1,0 +1,315 @@
+@page "/admin/inspections"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Manage Inspections</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1">
+                <i class="bi bi-clipboard-check me-2 text-primary"></i>Inspection Templates
+            </h1>
+            <p class="text-muted">Create and manage inspection checklists for your team.</p>
+        </div>
+        <button class="btn btn-primary shadow-glow" @onclick="ShowCreateModal">
+            <i class="bi bi-plus-lg me-2"></i>New Template
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-2 text-muted">Loading templates...</p>
+        </div>
+    }
+    else
+    {
+        <div class="row g-4">
+            @foreach (var template in templates)
+            {
+                <div class="col-md-6 col-lg-4">
+                    <div class="card border-0 shadow-glass h-100 hover-lift">
+                        <div class="card-body p-4">
+                            <div class="d-flex justify-content-between align-items-start mb-3">
+                                <span class="badge bg-light text-dark border">@template.Category?.Name</span>
+                                <div class="dropdown">
+                                    <button class="btn btn-link text-muted p-0" type="button" data-bs-toggle="dropdown">
+                                        <i class="bi bi-three-dots-vertical"></i>
+                                    </button>
+                                    <ul class="dropdown-menu dropdown-menu-end border-0 shadow-sm">
+                                        <li><button class="dropdown-item text-danger" @onclick="() => DeleteTemplate(template.Id)"><i class="bi bi-trash me-2"></i>Delete</button></li>
+                                    </ul>
+                                </div>
+                            </div>
+                            <h5 class="fw-bold mb-2">@template.Name</h5>
+                            <p class="text-muted small mb-3">@template.Description</p>
+                            
+                            <div class="d-flex align-items-center text-muted small mb-3">
+                                <i class="bi bi-arrow-repeat me-2"></i>
+                                <span>Frequency: <strong>@template.Frequency</strong></span>
+                            </div>
+
+                            <div class="bg-light rounded-3 p-3 mb-3">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="small fw-bold text-uppercase text-muted">Checklist Items</span>
+                                    <span class="badge bg-primary rounded-pill">@template.Items.Count</span>
+                                </div>
+                                <ul class="list-unstyled small mb-0">
+                                    @foreach (var item in template.Items.Take(3))
+                                    {
+                                        <li class="mb-1"><i class="bi bi-check2-square me-2 text-success"></i>@item.Description</li>
+                                    }
+                                    @if (template.Items.Count > 3)
+                                    {
+                                        <li class="text-muted fst-italic">+ @(template.Items.Count - 3) more...</li>
+                                    }
+                                </ul>
+                            </div>
+
+                            <button class="btn btn-outline-primary w-100" @onclick="() => EditTemplate(template.Id)">
+                                <i class="bi bi-pencil me-2"></i>Edit Checklist
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<!-- Create/Edit Modal -->
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">@(editingTemplate.Id == 0 ? "Create New Template" : "Edit Template")</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-uppercase text-muted">Template Name</label>
+                            <input type="text" class="form-control" @bind="editingTemplate.Name" placeholder="e.g. Monthly Fire Alarm Check" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-uppercase text-muted">Category</label>
+                            <select class="form-select" @bind="editingTemplate.CategoryId">
+                                @foreach (var cat in categories)
+                                {
+                                    <option value="@cat.Id">@cat.Name</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small fw-bold text-uppercase text-muted">Description</label>
+                            <textarea class="form-control" @bind="editingTemplate.Description" rows="2"></textarea>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold text-uppercase text-muted">Frequency</label>
+                            <select class="form-select" @bind="editingTemplate.Frequency">
+                                <option value="@InspectionFrequency.OnDemand">On Demand</option>
+                                <option value="@InspectionFrequency.Daily">Daily</option>
+                                <option value="@InspectionFrequency.Weekly">Weekly</option>
+                                <option value="@InspectionFrequency.Monthly">Monthly</option>
+                                <option value="@InspectionFrequency.Yearly">Yearly</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h6 class="fw-bold mb-0">Checklist Items</h6>
+                        <button class="btn btn-sm btn-outline-success" @onclick="AddItem">
+                            <i class="bi bi-plus-lg me-1"></i>Add Item
+                        </button>
+                    </div>
+
+                    <div class="list-group">
+                        @foreach (var item in editingItems)
+                        {
+                            <div class="list-group-item border-0 bg-light mb-2 rounded-3">
+                                <div class="row g-2 align-items-center">
+                                    <div class="col-md-8">
+                                        <input type="text" class="form-control form-control-sm" @bind="item.Description" placeholder="Checklist item description..." />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <select class="form-select form-select-sm" @bind="item.Type">
+                                            <option value="@InspectionItemType.PassFail">Pass/Fail</option>
+                                            <option value="@InspectionItemType.Text">Text Input</option>
+                                            <option value="@InspectionItemType.Number">Number Input</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-1 text-end">
+                                        <button class="btn btn-link text-danger p-0" @onclick="() => RemoveItem(item)">
+                                            <i class="bi bi-x-lg"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                        @if (!editingItems.Any())
+                        {
+                            <div class="text-center text-muted py-3 small">
+                                No items added yet. Click "Add Item" to start building the checklist.
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button type="button" class="btn btn-light" @onclick="CloseModal">Cancel</button>
+                    <button type="button" class="btn btn-primary shadow-glow" @onclick="SaveTemplate">
+                        <i class="bi bi-save me-2"></i>Save Template
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<InspectionTemplate> templates = new();
+    private List<Category> categories = new();
+    private bool isLoading = true;
+    private bool showModal = false;
+    
+    private InspectionTemplate editingTemplate = new();
+    private List<InspectionItem> editingItems = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        categories = await Db.Categories.ToListAsync();
+        templates = await Db.InspectionTemplates
+            .Include(t => t.Category)
+            .Include(t => t.Items)
+            .ToListAsync();
+        isLoading = false;
+    }
+
+    private void ShowCreateModal()
+    {
+        editingTemplate = new InspectionTemplate { CategoryId = categories.FirstOrDefault()?.Id ?? 0 };
+        editingItems = new List<InspectionItem>();
+        showModal = true;
+    }
+
+    private async Task EditTemplate(int id)
+    {
+        var template = await Db.InspectionTemplates
+            .Include(t => t.Items)
+            .FirstOrDefaultAsync(t => t.Id == id);
+            
+        if (template != null)
+        {
+            // Clone for editing to avoid direct EF tracking issues during cancel
+            editingTemplate = new InspectionTemplate
+            {
+                Id = template.Id,
+                Name = template.Name,
+                Description = template.Description,
+                CategoryId = template.CategoryId,
+                Frequency = template.Frequency
+            };
+            
+            editingItems = template.Items.Select(i => new InspectionItem
+            {
+                Id = i.Id,
+                InspectionTemplateId = i.InspectionTemplateId,
+                Description = i.Description,
+                Type = i.Type
+            }).ToList();
+            
+            showModal = true;
+        }
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private void AddItem()
+    {
+        editingItems.Add(new InspectionItem { Type = InspectionItemType.PassFail });
+    }
+
+    private void RemoveItem(InspectionItem item)
+    {
+        editingItems.Remove(item);
+    }
+
+    private async Task SaveTemplate()
+    {
+        if (string.IsNullOrWhiteSpace(editingTemplate.Name)) return;
+
+        if (editingTemplate.Id == 0)
+        {
+            // Create new
+            editingTemplate.Items = editingItems;
+            Db.InspectionTemplates.Add(editingTemplate);
+        }
+        else
+        {
+            // Update existing
+            var existing = await Db.InspectionTemplates
+                .Include(t => t.Items)
+                .FirstOrDefaultAsync(t => t.Id == editingTemplate.Id);
+                
+            if (existing != null)
+            {
+                existing.Name = editingTemplate.Name;
+                existing.Description = editingTemplate.Description;
+                existing.CategoryId = editingTemplate.CategoryId;
+                existing.Frequency = editingTemplate.Frequency;
+                
+                // Update items (naive approach: remove all and re-add)
+                Db.InspectionItems.RemoveRange(existing.Items);
+                existing.Items = editingItems.Select(i => new InspectionItem 
+                { 
+                    Description = i.Description, 
+                    Type = i.Type,
+                    InspectionTemplateId = existing.Id 
+                }).ToList();
+            }
+        }
+
+        await Db.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteTemplate(int id)
+    {
+        var template = await Db.InspectionTemplates.FindAsync(id);
+        if (template != null)
+        {
+            Db.InspectionTemplates.Remove(template);
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+}

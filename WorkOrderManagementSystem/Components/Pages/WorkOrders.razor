@@ -1,0 +1,744 @@
+@page "/workorders"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@using System.Linq
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
+@inject WorkOrderContext Db
+@inject NavigationManager Nav
+@inject IJSRuntime JSRuntime
+@inject ExportService ExportService
+@rendermode InteractiveServer
+
+	<div class="container-fluid mt-4 animate-fade-in">
+		<div class="d-flex justify-content-between align-items-center mb-5">
+			<div>
+				<h1 class="display-4 fw-bold mb-2">
+                    <span class="bi bi-list-check me-3 text-primary"></span>Work Orders
+                </h1>
+				<p class="lead text-muted">Manage and track maintenance requests with ease.</p>
+			</div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-success rounded-pill" @onclick="ExportToCSV">
+                    <i class="bi bi-file-earmark-spreadsheet me-2"></i>Export CSV
+                </button>
+                <button class="btn btn-outline-primary rounded-pill" @onclick="ExportToHTML">
+                    <i class="bi bi-file-earmark-pdf me-2"></i>Export Report
+                </button>
+            </div>
+		</div>
+
+		@if (username is null)
+		{
+			<div class="alert alert-warning shadow-sm border-0">
+				<i class="bi bi-exclamation-triangle me-2"></i>
+				Unable to determine user. Make sure Windows Authentication is enabled.
+			</div>
+		}
+		else
+		{
+			@if (!string.IsNullOrEmpty(successMessage))
+			{
+				<div class="alert alert-success shadow-sm border-0 animate-fade-in">
+					<i class="bi bi-check-circle me-2"></i>@successMessage
+				</div>
+			}
+			@if (!string.IsNullOrEmpty(errorMessage))
+			{
+				<div class="alert alert-danger shadow-sm border-0 animate-fade-in">
+					<i class="bi bi-x-circle me-2"></i>@errorMessage
+				</div>
+			}
+
+			@if (currentRole == Role.Admin)
+			{
+				<div class="card border-0 shadow-glass mb-5 animate-fade-in">
+					<div class="card-header bg-transparent border-0 pt-4 px-4">
+						<h5 class="mb-0 fw-bold text-primary"><i class="bi bi-tags-fill me-2"></i>Manage Categories</h5>
+					</div>
+					<div class="card-body px-4 pb-4">
+						<div class="input-group mb-3">
+							<InputText class="form-control shadow-none" @bind-Value="newCategory" placeholder="New category name" />
+							<button type="button" class="btn btn-primary shadow-glow" @onclick="CreateCategory">
+								<i class="bi bi-plus-lg"></i> Add
+							</button>
+						</div>
+						<div class="d-flex flex-wrap gap-2">
+							@foreach (var c in categories)
+							{
+								<span class="badge bg-white text-dark border shadow-sm d-flex align-items-center p-2 px-3 rounded-pill">
+									@c.Name
+									<button type="button" class="btn-close ms-2" style="font-size: 0.6rem;" @onclick="() => DeleteCategory(c.Id)"></button>
+								</span>
+							}
+						</div>
+					</div>
+				</div>
+			}
+
+			<div class="row g-4">
+				<!-- Form Section -->
+				<div class="col-lg-4">
+					<div class="card border-0 shadow-glass sticky-top animate-float" style="top: 2rem; z-index: 1; animation-duration: 8s;">
+						<div class="card-header bg-transparent border-0 pt-4 px-4">
+							<h5 class="mb-0 fw-bold text-primary">
+                                <i class="bi @(editingId.HasValue ? "bi-pencil-square" : "bi-plus-circle-fill") me-2"></i>
+                                @(editingId.HasValue ? "Edit Work Order" : "New Request")
+                            </h5>
+						</div>
+						<div class="card-body px-4 pb-4">
+							<EditForm Model="workOrder" OnValidSubmit="HandleValidSubmit" OnInvalidSubmit="HandleInvalidSubmit" FormName="workOrderForm" @key="@formKey">
+								<DataAnnotationsValidator />
+								
+								<div class="mb-3">
+									<label class="form-label text-muted small text-uppercase fw-bold">Description</label>
+									<InputTextArea class="form-control bg-light border-0" @bind-Value="workOrder.Description" placeholder="Describe the issue..." rows="4" />
+									<ValidationMessage For="() => workOrder.Description" />
+								</div>
+
+								<div class="mb-3">
+									<label class="form-label text-muted small text-uppercase fw-bold">Category</label>
+									<InputSelect class="form-select bg-light border-0" @bind-Value="workOrder.CategoryId">
+										<option value="0">Select Category...</option>
+										@foreach (var c in categories)
+										{
+											<option value="@c.Id">@c.Name</option>
+										}
+									</InputSelect>
+									<ValidationMessage For="() => workOrder.CategoryId" />
+								</div>
+
+								@if (currentRole != Role.User)
+								{
+									<div class="row g-2 mb-3">
+										<div class="col-6">
+											<label class="form-label text-muted small text-uppercase fw-bold">Priority</label>
+											<InputSelect class="form-select bg-light border-0" @bind-Value="workOrder.Priority">
+												@foreach (var priority in Enum.GetValues<WorkOrderPriority>())
+												{
+													<option value="@priority">@priority</option>
+												}
+											</InputSelect>
+										</div>
+										<div class="col-6">
+											<label class="form-label text-muted small text-uppercase fw-bold">Status</label>
+											<InputSelect class="form-select bg-light border-0" @bind-Value="workOrder.Status">
+												@foreach (var status in Enum.GetValues<WorkOrderStatus>())
+												{
+													<option value="@status">@status</option>
+												}
+											</InputSelect>
+										</div>
+									</div>
+								}
+
+								<div class="mb-4">
+									<label class="form-label text-muted small text-uppercase fw-bold">Location</label>
+									<div class="input-group">
+										<span class="input-group-text bg-light border-0"><i class="bi bi-geo-alt"></i></span>
+										<InputText class="form-control bg-light border-0" @bind-Value="workOrder.Location" placeholder="e.g. Room 302" />
+									</div>
+									<ValidationMessage For="() => workOrder.Location" />
+								</div>
+
+								<div class="d-grid gap-2">
+									<button class="btn btn-primary py-2" type="submit" @onclick="OnSubmitClick">
+										@(editingId.HasValue ? "Save Changes" : "Submit Request")
+									</button>
+									@if (editingId.HasValue)
+									{
+										<button type="button" class="btn btn-light text-muted" @onclick="ResetForm">Cancel</button>
+									}
+								</div>
+							</EditForm>
+
+							@if (editingId.HasValue)
+							{
+								<hr class="my-4 opacity-10" />
+								<h6 class="text-muted small text-uppercase fw-bold mb-3">Comments</h6>
+								<div class="mb-3" style="max-height: 200px; overflow-y: auto;">
+									@foreach (var comment in comments)
+									{
+										<div class="d-flex gap-2 mb-3">
+											<div class="flex-shrink-0">
+												<div class="avatar bg-light rounded-circle d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+													<span class="small fw-bold text-secondary">@comment.Username.Substring(0, 1)</span>
+												</div>
+											</div>
+											<div>
+												<div class="bg-light rounded-3 p-2 px-3">
+													<div class="d-flex justify-content-between align-items-center mb-1">
+														<span class="small fw-bold text-dark">@comment.Username</span>
+														<span class="small text-muted ms-2" style="font-size: 0.7rem;">@comment.Timestamp.ToLocalTime().ToString("g")</span>
+													</div>
+													<p class="small mb-0 text-secondary">@comment.Text</p>
+												</div>
+											</div>
+										</div>
+									}
+									@if (!comments.Any())
+									{
+										<p class="text-muted small text-center fst-italic">No comments yet.</p>
+									}
+								</div>
+								
+								<div class="input-group">
+									<input type="text" class="form-control bg-light border-0" placeholder="Write a comment..." @bind="newCommentText" />
+									<button class="btn btn-outline-primary border-0" type="button" @onclick="AddComment">
+										<i class="bi bi-send-fill"></i>
+									</button>
+								</div>
+							}
+						</div>
+					</div>
+				</div>
+
+				<!-- List Section -->
+				<div class="col-lg-8">
+					<div class="card border-0 shadow-glass h-100">
+						<div class="card-header bg-transparent border-0 pt-4 px-4">
+							<div class="row g-3">
+								<div class="col-md-6">
+									<div class="input-group shadow-sm rounded-pill overflow-hidden">
+										<span class="input-group-text bg-white border-0 ps-3"><i class="bi bi-search text-muted"></i></span>
+										<input type="text" class="form-control border-0 shadow-none" placeholder="Search orders..." @bind="searchText" @bind:event="oninput" @onkeyup="LoadDataAsync" />
+									</div>
+								</div>
+								<div class="col-md-3">
+									<select class="form-select border-0 shadow-sm rounded-pill" @bind="filterStatus">
+										<option value="">All Status</option>
+										@foreach (var s in Enum.GetValues<WorkOrderStatus>())
+										{
+											<option value="@s">@s</option>
+										}
+									</select>
+								</div>
+								<div class="col-md-3">
+									<div class="d-grid">
+										<button class="btn btn-primary shadow-glow rounded-pill" @onclick="LoadDataAsync">Filter</button>
+									</div>
+								</div>
+							</div>
+						</div>
+						<div class="card-body p-0">
+							@if (recent?.Any() == true)
+							{
+								<div class="list-group list-group-flush">
+									@foreach (var r in recent)
+									{
+										<div class="list-group-item p-4 border-bottom-0 border-top bg-transparent hover-lift transition-all">
+											<div class="d-flex justify-content-between align-items-start">
+												<div class="me-3">
+													<div class="d-flex align-items-center gap-2 mb-3">
+														<span class="badge @GetPriorityBadgeClass(r.Priority) shadow-sm">@r.Priority</span>
+														<span class="badge @GetStatusBadgeClass(r.Status) shadow-sm">@r.Status</span>
+														<small class="text-muted ms-2 fw-medium">
+															<i class="bi bi-clock me-1"></i>@r.Timestamp.ToLocalTime().ToString("g")
+														</small>
+													</div>
+													<h5 class="mb-2 fw-bold text-dark">@r.Description</h5>
+													<div class="d-flex align-items-center gap-3 mt-3 text-muted small fw-medium">
+														<span class="d-flex align-items-center"><i class="bi bi-person-circle me-2 text-primary opacity-50"></i>@r.Username</span>
+														<span class="d-flex align-items-center"><i class="bi bi-tag-fill me-2 text-info opacity-50"></i>@r.Category?.Name</span>
+														<span class="d-flex align-items-center"><i class="bi bi-geo-alt-fill me-2 text-danger opacity-50"></i>@r.Location</span>
+													</div>
+												</div>
+												<div class="dropdown">
+													<button class="btn btn-light btn-sm rounded-circle" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+														<i class="bi bi-three-dots-vertical"></i>
+													</button>
+													<ul class="dropdown-menu dropdown-menu-end shadow-sm border-0">
+														@if (currentRole == Role.Admin || (currentRole == Role.Worker && r.Status != WorkOrderStatus.Completed))
+														{
+															<li><button class="dropdown-item" @onclick="() => StartEdit(r.Id)"><i class="bi bi-pencil me-2"></i>Edit</button></li>
+														}
+														@if (currentRole == Role.Admin)
+														{
+															<li><hr class="dropdown-divider"></li>
+															<li><button class="dropdown-item text-danger" @onclick="() => DeleteWorkOrder(r.Id)"><i class="bi bi-trash me-2"></i>Delete</button></li>
+														}
+													</ul>
+													<!-- Fallback buttons if dropdown JS fails or for simplicity -->
+													<div class="d-none d-md-flex gap-2 mt-2">
+														@if (currentRole == Role.Admin || (currentRole == Role.Worker && r.Status != WorkOrderStatus.Completed))
+														{
+															<button class="btn btn-sm btn-outline-secondary" @onclick="() => StartEdit(r.Id)">Edit</button>
+														}
+														@if (currentRole == Role.Admin)
+														{
+															<button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteWorkOrder(r.Id)">Delete</button>
+														}
+													</div>
+												</div>
+											</div>
+										</div>
+									}
+								</div>
+							}
+							else
+							{
+								<div class="text-center py-5">
+									<div class="mb-3 text-muted opacity-25">
+										<i class="bi bi-inbox fs-1"></i>
+									</div>
+									<h6 class="text-muted">No work orders found</h6>
+								</div>
+							}
+						</div>
+					</div>
+				</div>
+			</div>
+		}
+	</div>
+
+@code {
+	private WorkOrder workOrder = new() { Timestamp = DateTime.UtcNow };
+	private int formKey = 0;
+	private bool showValidation = false;
+	private string? username;
+	private List<Category> categories = new();
+	private IEnumerable<WorkOrder>? recent;
+	private Role currentRole = Role.User;
+	private string newCategory = string.Empty;
+	private int? editingId = null;
+	private string successMessage = string.Empty;
+	private string errorMessage = string.Empty;
+	
+	// Filters
+	private string searchText = string.Empty;
+	private WorkOrderStatus? filterStatus;
+	private WorkOrderPriority? filterPriority;
+
+	// Comments
+	private List<WorkOrderComment> comments = new();
+	private string newCommentText = string.Empty;
+
+	protected override async Task OnInitializedAsync()
+	{
+		await LogToConsole("🚀 OnInitializedAsync called");
+		try 
+		{
+			username = System.Security.Principal.WindowsIdentity.GetCurrent()?.Name;
+		}
+		catch
+		{
+			// Ignore errors getting windows identity
+		}
+
+		if (string.IsNullOrWhiteSpace(username))
+		{
+			username = Environment.UserName;
+		}
+		
+		if (string.IsNullOrWhiteSpace(username))
+		{
+			username = "Guest";
+		}
+
+		// Determine Role
+		var userRole = await Db.UserRoles.FirstOrDefaultAsync(u => u.Username == username);
+		if (userRole != null)
+		{
+			currentRole = userRole.Role;
+		}
+		else
+		{
+			// Default to User if not found
+			currentRole = Role.User;
+		}
+
+		workOrder.Username = username;
+		await LogToConsole($"Username set to: '{workOrder.Username}', Role: {currentRole}");
+		await LoadDataAsync();
+		await LogToConsole($"Initial workOrder state - Description: '{workOrder.Description}', Location: '{workOrder.Location}', CategoryId: {workOrder.CategoryId}");
+	}
+
+	private async Task LoadDataAsync()
+	{
+		categories = await Db.Categories.OrderBy(c => c.Name).ToListAsync();
+		
+		var query = Db.WorkOrders.Include(w => w.Category).AsQueryable();
+
+		if (!string.IsNullOrWhiteSpace(searchText))
+		{
+			query = query.Where(w => w.Description.Contains(searchText) || w.Location.Contains(searchText));
+		}
+
+		if (filterStatus.HasValue)
+		{
+			query = query.Where(w => w.Status == filterStatus.Value);
+		}
+
+		if (filterPriority.HasValue)
+		{
+			query = query.Where(w => w.Priority == filterPriority.Value);
+		}
+
+		// Users can only see their own orders
+		if (currentRole == Role.User)
+		{
+			query = query.Where(w => w.Username == username);
+		}
+
+		recent = await query.OrderByDescending(w => w.Timestamp).Take(50).ToListAsync();
+		
+		await LogToConsole($"Loaded {categories.Count} categories");
+		
+		// Ensure CategoryId is set to a valid category if it's 0 and categories exist
+		if (workOrder.CategoryId == 0 && categories.Any())
+		{
+			workOrder.CategoryId = categories.First().Id;
+			await LogToConsole($"Auto-selected CategoryId: {workOrder.CategoryId}");
+		}
+	}
+
+	private async Task CreateCategory()
+	{
+		if (!string.IsNullOrWhiteSpace(newCategory))
+		{
+			var c = new Category { Name = newCategory.Trim() };
+			Db.Categories.Add(c);
+			await Db.SaveChangesAsync();
+			newCategory = string.Empty;
+			await LoadDataAsync();
+		}
+	}
+
+	private async Task DeleteCategory(int id)
+	{
+		var c = await Db.Categories.FindAsync(id);
+		if (c != null)
+		{
+			Db.Categories.Remove(c);
+			await Db.SaveChangesAsync();
+			await LoadDataAsync();
+		}
+	}
+
+	private async Task HandleValidSubmit()
+	{
+		await LogToConsole("✅ HandleValidSubmit called - Form validation passed!");
+		await LogToConsole($"Before trim - Description: '{workOrder.Description}' (Length: {workOrder.Description?.Length ?? 0})");
+		await LogToConsole($"Before trim - Location: '{workOrder.Location}' (Length: {workOrder.Location?.Length ?? 0})");
+		await LogToConsole($"Before trim - CategoryId: {workOrder.CategoryId}");
+		await LogToConsole($"Before trim - Username: '{workOrder.Username}' (Length: {workOrder.Username?.Length ?? 0})");
+		
+		try
+		{
+			// Trim and validate fields
+			workOrder.Location = (workOrder.Location ?? string.Empty).Trim();
+			workOrder.Description = (workOrder.Description ?? string.Empty).Trim();
+			
+			await LogToConsole($"After trim - Description: '{workOrder.Description}' (Length: {workOrder.Description?.Length ?? 0})");
+			await LogToConsole($"After trim - Location: '{workOrder.Location}' (Length: {workOrder.Location?.Length ?? 0})");
+
+			// Validate that fields aren't empty after trimming
+			if (string.IsNullOrWhiteSpace(workOrder.Description))
+			{
+				await LogToConsole("❌ Description is empty after trim - returning");
+				errorMessage = "Please enter a description.";
+				showValidation = true;
+				await InvokeAsync(StateHasChanged);
+				return;
+			}
+
+			if (string.IsNullOrWhiteSpace(workOrder.Location))
+			{
+				await LogToConsole("❌ Location is empty after trim - returning");
+				errorMessage = "Please enter a location.";
+				showValidation = true;
+				await InvokeAsync(StateHasChanged);
+				return;
+			}
+
+			// Ensure CategoryId is set to a valid category
+			if (workOrder.CategoryId == 0 && categories.Any())
+			{
+				workOrder.CategoryId = categories.First().Id;
+				await LogToConsole($"Auto-selected CategoryId (in submit): {workOrder.CategoryId}");
+			}
+
+			if (workOrder.CategoryId == 0)
+			{
+				await LogToConsole("❌ CategoryId is 0 - returning");
+				errorMessage = "Please select a category.";
+				showValidation = true;
+				await InvokeAsync(StateHasChanged);
+				return;
+			}
+
+			await LogToConsole("✅ All validations passed - proceeding to save");
+			workOrder.Timestamp = DateTime.UtcNow;
+
+			// Enforce role-based defaults for new orders
+			if (!editingId.HasValue && currentRole == Role.User)
+			{
+				workOrder.Status = WorkOrderStatus.New;
+				workOrder.Priority = WorkOrderPriority.Medium; // Default for users
+			}
+
+			if (editingId.HasValue)
+			{
+				var existing = await Db.WorkOrders.FindAsync(editingId.Value);
+				if (existing != null)
+				{
+					// Workers can only update Status (and add comments, handled separately)
+					// But here we are updating the main record.
+					// If Worker, we might want to restrict changing Description/Location?
+					// For now, let's allow it but ensure Status logic is sound.
+					
+					if (currentRole == Role.Admin || currentRole == Role.Worker)
+					{
+						existing.Status = workOrder.Status;
+						existing.Priority = workOrder.Priority;
+					}
+					
+					if (currentRole == Role.Admin)
+					{
+						existing.Description = workOrder.Description;
+						existing.Location = workOrder.Location;
+						existing.CategoryId = workOrder.CategoryId;
+					}
+
+					await Db.SaveChangesAsync();
+					editingId = null;
+					ResetForm();
+					await LoadDataAsync();
+					await InvokeAsync(StateHasChanged);
+					ShowSuccess("Work order updated successfully.");
+					return;
+				}
+			}
+
+			await LogToConsole("💾 Saving work order to database...");
+			Db.WorkOrders.Add(workOrder);
+			await Db.SaveChangesAsync();
+			await LogToConsole("✅ Work order saved successfully!");
+			ResetForm();
+			await LoadDataAsync();
+			await InvokeAsync(StateHasChanged);
+			ShowSuccess("Work order submitted successfully.");
+		}
+		catch (Exception ex)
+		{
+			await LogToConsole($"❌ Exception occurred: {ex.Message}");
+			await LogToConsole($"Stack trace: {ex.StackTrace}");
+			errorMessage = "Error saving work order: " + ex.Message;
+			await InvokeAsync(StateHasChanged);
+			_ = Task.Run(async () =>
+			{
+				await Task.Delay(5000);
+				errorMessage = string.Empty;
+				await InvokeAsync(StateHasChanged);
+			});
+		}
+	}
+
+	private void ResetForm()
+	{
+		workOrder = new WorkOrder 
+		{ 
+			Username = username ?? "Guest", 
+			Timestamp = DateTime.UtcNow 
+		};
+		showValidation = false;
+		formKey++;
+	}
+
+	private async Task HandleInvalidSubmit(EditContext context)
+	{
+		showValidation = true;
+		await LogToConsole("❌ HandleInvalidSubmit called - Form validation failed");
+		await LogToConsole($"Description: '{workOrder.Description}' (Length: {workOrder.Description?.Length ?? 0})");
+		await LogToConsole($"Location: '{workOrder.Location}' (Length: {workOrder.Location?.Length ?? 0})");
+		await LogToConsole($"CategoryId: {workOrder.CategoryId}");
+		await LogToConsole($"Username: '{workOrder.Username}' (Length: {workOrder.Username?.Length ?? 0})");
+		
+		var messages = context.GetValidationMessages().ToList();
+		await LogToConsole($"Validation errors count: {messages.Count}");
+		foreach (var error in messages)
+		{
+			await LogToConsole($"  - {error}");
+		}
+	}
+
+	private async void ShowSuccess(string message)
+	{
+		successMessage = message;
+		await InvokeAsync(StateHasChanged);
+		_ = Task.Run(async () =>
+		{
+			await Task.Delay(3000);
+			successMessage = string.Empty;
+			await InvokeAsync(StateHasChanged);
+		});
+	}
+
+	private async Task StartEdit(int id)
+	{
+		var existing = await Db.WorkOrders.Include(w => w.Category).FirstOrDefaultAsync(w => w.Id == id);
+		if (existing != null)
+		{
+			editingId = id;
+			workOrder = new WorkOrder
+			{
+				Id = existing.Id,
+				Username = existing.Username,
+				CategoryId = existing.CategoryId,
+				Location = existing.Location,
+				Description = existing.Description,
+				Timestamp = existing.Timestamp,
+				Priority = existing.Priority,
+				Status = existing.Status
+			};
+			
+			// Load comments
+			comments = await Db.WorkOrderComments
+				.Where(c => c.WorkOrderId == id)
+				.OrderBy(c => c.Timestamp)
+				.ToListAsync();
+
+			showValidation = false;
+			formKey++;
+		}
+	}
+
+	private async Task AddComment()
+	{
+		if (editingId.HasValue && !string.IsNullOrWhiteSpace(newCommentText))
+		{
+			var comment = new WorkOrderComment
+			{
+				WorkOrderId = editingId.Value,
+				Text = newCommentText.Trim(),
+				Username = username ?? "Guest",
+				Timestamp = DateTime.UtcNow
+			};
+			
+			Db.WorkOrderComments.Add(comment);
+			await Db.SaveChangesAsync();
+			
+			newCommentText = string.Empty;
+			
+			// Reload comments
+			comments = await Db.WorkOrderComments
+				.Where(c => c.WorkOrderId == editingId.Value)
+				.OrderBy(c => c.Timestamp)
+				.ToListAsync();
+		}
+	}
+
+	private async Task DeleteWorkOrder(int id)
+	{
+		var existing = await Db.WorkOrders.FindAsync(id);
+		if (existing != null)
+		{
+			Db.WorkOrders.Remove(existing);
+			await Db.SaveChangesAsync();
+			await LoadDataAsync();
+			ShowSuccess("Work order deleted.");
+		}
+	}
+
+	private async Task LogToConsole(string message)
+	{
+		try
+		{
+			await JSRuntime.InvokeVoidAsync("console.log", $"[WorkOrders] {message}");
+		}
+		catch (Exception ex)
+		{
+			// Log error if JS interop fails
+			try
+			{
+				await JSRuntime.InvokeVoidAsync("console.error", $"[WorkOrders] Logging failed: {ex.Message}");
+			}
+			catch { }
+		}
+	}
+
+	private async Task OnSubmitClick()
+	{
+		await LogToConsole("🔘 Submit button clicked");
+		await LogToConsole($"At click time - Description: '{workOrder.Description}' (Length: {workOrder.Description?.Length ?? 0})");
+		await LogToConsole($"At click time - Location: '{workOrder.Location}' (Length: {workOrder.Location?.Length ?? 0})");
+		await LogToConsole($"At click time - CategoryId: {workOrder.CategoryId}");
+	}
+
+	private async Task TestLogging()
+	{
+		await LogToConsole("🧪 Test logging button clicked!");
+		await LogToConsole($"Current Description: '{workOrder.Description}'");
+		await LogToConsole($"Current Location: '{workOrder.Location}'");
+		await LogToConsole($"Current CategoryId: {workOrder.CategoryId}");
+	}
+	private string GetPriorityBadgeClass(WorkOrderPriority p) => p switch
+	{
+		WorkOrderPriority.Low => "bg-info text-dark",
+		WorkOrderPriority.Medium => "bg-primary",
+		WorkOrderPriority.High => "bg-warning text-dark",
+		WorkOrderPriority.Critical => "bg-danger",
+		_ => "bg-secondary"
+	};
+
+	private string GetStatusBadgeClass(WorkOrderStatus s) => s switch
+	{
+		WorkOrderStatus.New => "bg-secondary",
+		WorkOrderStatus.InProgress => "bg-primary",
+		WorkOrderStatus.Completed => "bg-success",
+		WorkOrderStatus.Cancelled => "bg-dark",
+		_ => "bg-light text-dark"
+	};
+
+	private async Task ExportToCSV()
+	{
+		try
+		{
+			var allOrders = await Db.WorkOrders
+				.Include(w => w.Category)
+				.OrderByDescending(w => w.Timestamp)
+				.ToListAsync();
+
+			var csvData = ExportService.ExportToCSV(allOrders);
+			var fileName = $"WorkOrders_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
+
+			await JSRuntime.InvokeVoidAsync("downloadFile", fileName, "text/csv", Convert.ToBase64String(csvData));
+			successMessage = "Export completed successfully!";
+		}
+		catch (Exception ex)
+		{
+			errorMessage = $"Export failed: {ex.Message}";
+		}
+	}
+
+	private async Task ExportToHTML()
+	{
+		try
+		{
+			var allOrders = await Db.WorkOrders
+				.Include(w => w.Category)
+				.OrderByDescending(w => w.Timestamp)
+				.ToListAsync();
+
+			var metrics = new Dictionary<string, object>
+			{
+				{ "total", allOrders.Count },
+				{ "completed", allOrders.Count(w => w.Status == WorkOrderStatus.Completed) },
+				{ "inProgress", allOrders.Count(w => w.Status == WorkOrderStatus.InProgress) },
+				{ "critical", allOrders.Count(w => w.Priority == WorkOrderPriority.Critical) }
+			};
+
+			var htmlReport = ExportService.GenerateHTMLReport(allOrders, metrics);
+			var fileName = $"WorkOrderReport_{DateTime.Now:yyyyMMdd_HHmmss}.html";
+			var htmlBytes = System.Text.Encoding.UTF8.GetBytes(htmlReport);
+
+			await JSRuntime.InvokeVoidAsync("downloadFile", fileName, "text/html", Convert.ToBase64String(htmlBytes));
+			successMessage = "Report generated successfully!";
+		}
+		catch (Exception ex)
+		{
+			errorMessage = $"Report generation failed: {ex.Message}";
+		}
+	}
+}

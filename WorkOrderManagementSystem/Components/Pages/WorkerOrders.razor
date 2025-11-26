@@ -1,0 +1,150 @@
+@page "/worker/orders"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.WorkerLayout
+@rendermode InteractiveServer
+
+<PageTitle>My Orders</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Worker)
+{
+    Nav.NavigateTo("/worker/login", true);
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <h1 class="display-6 fw-bold">
+            <i class="bi bi-list-check me-2 text-primary"></i>My Work Orders
+        </h1>
+        <div class="d-flex gap-2">
+            <select class="form-select shadow-sm" @bind="filterStatus" style="width: auto;">
+                <option value="">All Status</option>
+                @foreach (var s in Enum.GetValues<WorkOrderStatus>())
+                {
+                    <option value="@s">@s</option>
+                }
+            </select>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-glass">
+        <div class="card-body p-0">
+            @if (filteredOrders.Any())
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0 align-middle">
+                        <thead class="bg-light">
+                            <tr>
+                                <th class="ps-4">ID</th>
+                                <th>Priority</th>
+                                <th>Description</th>
+                                <th>Location</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th class="text-end pe-4">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var order in filteredOrders)
+                            {
+                                <tr class="hover-lift transition-all">
+                                    <td class="ps-4 fw-bold">#@order.Id</td>
+                                    <td><span class="badge @GetPriorityBadgeClass(order.Priority)">@order.Priority</span></td>
+                                    <td>
+                                        <div class="fw-semibold text-dark">@order.Description</div>
+                                        <div class="small text-muted">@order.Category?.Name</div>
+                                    </td>
+                                    <td><i class="bi bi-geo-alt me-1 text-muted"></i>@order.Location</td>
+                                    <td><span class="badge @GetStatusBadgeClass(order.Status)">@order.Status</span></td>
+                                    <td class="text-muted small">@order.Timestamp.ToLocalTime().ToString("MMM dd")</td>
+                                    <td class="text-end pe-4">
+                                        @if (order.Status == WorkOrderStatus.New)
+                                        {
+                                            <button class="btn btn-sm btn-primary rounded-pill" @onclick="() => UpdateStatus(order, WorkOrderStatus.InProgress)">
+                                                Start
+                                            </button>
+                                        }
+                                        else if (order.Status == WorkOrderStatus.InProgress)
+                                        {
+                                            <button class="btn btn-sm btn-success rounded-pill" @onclick="() => UpdateStatus(order, WorkOrderStatus.Completed)">
+                                                Complete
+                                            </button>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-success"><i class="bi bi-check-lg"></i></span>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+            else
+            {
+                <div class="text-center py-5">
+                    <i class="bi bi-inbox fs-1 text-muted opacity-50"></i>
+                    <p class="text-muted mt-3">No work orders found.</p>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private List<WorkOrder> orders = new();
+    private WorkOrderStatus? filterStatus;
+
+    private IEnumerable<WorkOrder> filteredOrders => filterStatus.HasValue
+        ? orders.Where(o => o.Status == filterStatus.Value)
+        : orders;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Worker)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        var workerUsername = Session.CurrentUser?.Username ?? "";
+        orders = await Db.WorkOrders
+            .Include(w => w.Category)
+            .Where(w => w.AssignedTo == workerUsername)
+            .OrderByDescending(w => w.Priority)
+            .ThenByDescending(w => w.Timestamp)
+            .ToListAsync();
+    }
+
+    private async Task UpdateStatus(WorkOrder order, WorkOrderStatus newStatus)
+    {
+        order.Status = newStatus;
+        await Db.SaveChangesAsync();
+        await LoadData();
+    }
+
+    private string GetPriorityBadgeClass(WorkOrderPriority p) => p switch
+    {
+        WorkOrderPriority.Low => "bg-info bg-opacity-10 text-info",
+        WorkOrderPriority.Medium => "bg-primary bg-opacity-10 text-primary",
+        WorkOrderPriority.High => "bg-warning bg-opacity-10 text-warning",
+        WorkOrderPriority.Critical => "bg-danger bg-opacity-10 text-danger",
+        _ => "bg-secondary"
+    };
+
+    private string GetStatusBadgeClass(WorkOrderStatus s) => s switch
+    {
+        WorkOrderStatus.New => "bg-secondary",
+        WorkOrderStatus.InProgress => "bg-primary",
+        WorkOrderStatus.Completed => "bg-success",
+        _ => "bg-light text-dark"
+    };
+}

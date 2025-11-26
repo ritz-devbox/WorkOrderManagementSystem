@@ -1,0 +1,158 @@
+@page "/track"
+@page "/track/{OrderId:int}"
+@using WorkOrderManagementSystem.Data
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.PublicLayout
+@rendermode InteractiveServer
+
+<PageTitle>Track Work Order</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+        <div class="text-center mb-5">
+            <h1 class="fw-bold mb-3">Track Your Request</h1>
+            <p class="text-muted">Enter your work order ID to check its current status.</p>
+        </div>
+
+        <div class="card border-0 shadow-glass mb-5 animate-fade-in">
+            <div class="card-body p-5">
+                <div class="input-group mb-3">
+                    <span class="input-group-text bg-light border-0">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input type="number" class="form-control form-control-lg border-0 bg-light" 
+                           placeholder="Enter Order ID (e.g. 123)" 
+                           @bind="searchId" 
+                           @bind:event="oninput" 
+                           @onkeydown="@Enter" />
+                    <button class="btn btn-primary shadow-glow px-4" @onclick="SearchOrder">
+                        Track
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        @if (hasSearched)
+        {
+            @if (order != null)
+            {
+                <div class="card border-0 shadow-glass animate-fade-in">
+                    <div class="card-body p-5">
+                        <div class="d-flex justify-content-between align-items-start mb-4">
+                            <div>
+                                <h3 class="fw-bold mb-1">Order #@order.Id</h3>
+                                <p class="text-muted mb-0">
+                                    <i class="bi bi-clock me-1"></i>
+                                    Created on @order.Timestamp.ToLocalTime().ToString("MMMM dd, yyyy")
+                                </p>
+                            </div>
+                            <span class="badge @GetStatusBadgeClass(order.Status) fs-6 px-3 py-2 rounded-pill">
+                                @order.Status
+                            </span>
+                        </div>
+
+                        <div class="mb-4">
+                            <h6 class="text-uppercase text-muted small fw-bold mb-2">Description</h6>
+                            <p class="lead">@order.Description</p>
+                        </div>
+
+                        <div class="row g-4 mb-4">
+                            <div class="col-6">
+                                <div class="p-3 rounded bg-light">
+                                    <small class="text-uppercase text-muted fw-bold d-block mb-1">Location</small>
+                                    <span class="fw-medium"><i class="bi bi-geo-alt me-1 text-danger"></i>@order.Location</span>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="p-3 rounded bg-light">
+                                    <small class="text-uppercase text-muted fw-bold d-block mb-1">Category</small>
+                                    <span class="fw-medium"><i class="bi bi-tag me-1 text-info"></i>@order.Category?.Name</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        @if (order.Status == WorkOrderStatus.Completed)
+                        {
+                            <div class="alert alert-success border-0 shadow-sm">
+                                <i class="bi bi-check-circle-fill me-2"></i>
+                                This work order has been completed.
+                            </div>
+                        }
+                        else if (order.Status == WorkOrderStatus.InProgress)
+                        {
+                            <div class="alert alert-primary border-0 shadow-sm">
+                                <i class="bi bi-tools me-2"></i>
+                                A worker is currently working on this request.
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="alert alert-secondary border-0 shadow-sm">
+                                <i class="bi bi-hourglass-split me-2"></i>
+                                This request is pending assignment.
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="text-center py-5 animate-fade-in">
+                    <div class="mb-3">
+                        <i class="bi bi-search fs-1 text-muted opacity-25"></i>
+                    </div>
+                    <h4 class="fw-bold text-muted">Order Not Found</h4>
+                    <p class="text-muted">We couldn't find a work order with ID #@searchId.</p>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int? OrderId { get; set; }
+
+    private int? searchId;
+    private WorkOrder? order;
+    private bool hasSearched = false;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (OrderId.HasValue)
+        {
+            searchId = OrderId;
+            await SearchOrder();
+        }
+    }
+
+    private async Task SearchOrder()
+    {
+        if (searchId.HasValue && searchId > 0)
+        {
+            hasSearched = true;
+            order = await Db.WorkOrders
+                .Include(w => w.Category)
+                .FirstOrDefaultAsync(w => w.Id == searchId.Value);
+        }
+    }
+
+    private async Task Enter(KeyboardEventArgs e)
+    {
+        if (e.Code == "Enter" || e.Code == "NumpadEnter")
+        {
+            await SearchOrder();
+        }
+    }
+
+    private string GetStatusBadgeClass(WorkOrderStatus s) => s switch
+    {
+        WorkOrderStatus.New => "bg-secondary",
+        WorkOrderStatus.InProgress => "bg-primary",
+        WorkOrderStatus.Completed => "bg-success",
+        WorkOrderStatus.Cancelled => "bg-dark",
+        _ => "bg-light text-dark"
+    };
+}

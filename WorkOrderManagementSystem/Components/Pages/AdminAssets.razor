@@ -1,0 +1,175 @@
+@page "/admin/assets"
+@using WorkOrderManagementSystem.Data
+@using WorkOrderManagementSystem.Services
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+@inject SessionService Session
+@inject QRCodeService QRService
+@inject NavigationManager Nav
+@layout WorkOrderManagementSystem.Components.Layout.AdminLayout
+
+<PageTitle>Asset Management</PageTitle>
+
+@if (!Session.IsAuthenticated || Session.CurrentRole != Role.Admin)
+{
+    Nav.NavigateTo("/admin/login");
+    return;
+}
+
+<div class="container-fluid mt-4 animate-fade-in">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="display-6 fw-bold mb-1">
+                <i class="bi bi-qr-code me-2 text-primary"></i>Asset Management
+            </h1>
+            <p class="text-muted">Track equipment with QR codes.</p>
+        </div>
+        <button class="btn btn-primary shadow-glow" @onclick="ShowAddModal">
+            <i class="bi bi-plus-lg me-2"></i>New Asset
+        </button>
+    </div>
+
+    <div class="row g-4">
+        @foreach (var asset in assets)
+        {
+            <div class="col-md-6 col-lg-4">
+                <div class="card border-0 shadow-glass h-100">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start mb-3">
+                            <div>
+                                <h5 class="fw-bold mb-1">@asset.Name</h5>
+                                <span class="badge bg-light text-dark border">@asset.Category?.Name</span>
+                            </div>
+                            <button class="btn btn-link text-danger p-0" @onclick="() => DeleteAsset(asset.Id)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                        
+                        <p class="text-muted small mb-3">@asset.Description</p>
+                        
+                        <!-- QR Code Display -->
+                        <div class="text-center bg-light rounded-3 p-3 mb-3">
+                            <img src="@QRService.GetQRCodeImageUrl(asset.QRCode)" alt="QR Code" class="img-fluid mb-2" style="max-width: 150px;" />
+                            <div class="small fw-bold text-primary">@asset.QRCode</div>
+                        </div>
+                        
+                        <div class="small text-muted">
+                            <div><i class="bi bi-building me-2"></i>@(asset.LocationBuilding?.Name ?? "No location")</div>
+                            <div><i class="bi bi-tools me-2"></i>@asset.WorkOrders.Count repair(s)</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<!-- Add Asset Modal -->
+@if (showModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header border-0">
+                    <h5 class="modal-title fw-bold">New Asset</h5>
+                    <button type="button" class="btn-close" @onclick="CloseModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Asset Name</label>
+                        <input type="text" class="form-control" @bind="newAsset.Name" placeholder="e.g. AC Unit #5" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" @bind="newAsset.Description" rows="2"></textarea>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Category</label>
+                        <select class="form-select" @bind="newAsset.CategoryId">
+                            <option value="">Select...</option>
+                            @foreach (var cat in categories)
+                            {
+                                <option value="@cat.Id">@cat.Name</option>
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Building</label>
+                        <select class="form-select" @bind="newAsset.LocationBuildingId">
+                            <option value="">Select...</option>
+                            @foreach (var building in buildings)
+                            {
+                                <option value="@building.Id">@building.Name</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer border-0">
+                    <button class="btn btn-light" @onclick="CloseModal">Cancel</button>
+                    <button class="btn btn-primary" @onclick="SaveAsset">Generate QR & Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<Asset> assets = new();
+    private List<Category> categories = new();
+    private List<Building> buildings = new();
+    private bool showModal = false;
+    private Asset newAsset = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (Session.IsAuthenticated && Session.CurrentRole == Role.Admin)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        assets = await Db.Assets
+            .Include(a => a.Category)
+            .Include(a => a.LocationBuilding)
+            .Include(a => a.WorkOrders)
+            .ToListAsync();
+            
+        categories = await Db.Categories.ToListAsync();
+        buildings = await Db.Buildings.ToListAsync();
+    }
+
+    private void ShowAddModal()
+    {
+        newAsset = new Asset();
+        showModal = true;
+    }
+
+    private void CloseModal()
+    {
+        showModal = false;
+    }
+
+    private async Task SaveAsset()
+    {
+        if (string.IsNullOrWhiteSpace(newAsset.Name)) return;
+
+        newAsset.QRCode = QRService.GenerateQRCode();
+        Db.Assets.Add(newAsset);
+        await Db.SaveChangesAsync();
+        await LoadData();
+        CloseModal();
+    }
+
+    private async Task DeleteAsset(int id)
+    {
+        var asset = await Db.Assets.FindAsync(id);
+        if (asset != null)
+        {
+            Db.Assets.Remove(asset);
+            await Db.SaveChangesAsync();
+            await LoadData();
+        }
+    }
+}

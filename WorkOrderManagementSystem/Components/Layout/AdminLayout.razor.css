@@ -1,0 +1,91 @@
+.page {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+main {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background-color: #fff1f2;
+    /* Light red/rose tint for admin portal */
+    overflow-y: auto;
+}
+
+.admin-sidebar {
+    background-image: linear-gradient(180deg, #be123c 0%, #881337 100%);
+    color: white;
+}
+
+.top-row {
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    justify-content: flex-end;
+    height: 3.5rem;
+    display: flex;
+    align-items: center;
+    z-index: 10;
+}
+
+.navbar-brand {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: white !important;
+}
+
+.nav-item ::deep a {
+    color: rgba(255, 255, 255, 0.7);
+    border-radius: 4px;
+    height: 3rem;
+    display: flex;
+    align-items: center;
+    line-height: 3rem;
+    padding: 0 1rem;
+    transition: all 0.2s;
+}
+
+.nav-item ::deep a.active {
+    background-color: rgba(255, 255, 255, 0.2);
+    color: white;
+    font-weight: 600;
+}
+
+.nav-item ::deep a:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+}
+
+.bi {
+    display: inline-block;
+    width: 1.25rem;
+    height: 1.25rem;
+    margin-right: 0.75rem;
+    font-size: 1.1rem;
+    text-align: center;
+}
+
+@media (min-width: 641px) {
+    .page {
+        flex-direction: row;
+    }
+
+    .sidebar {
+        width: 250px;
+        height: 100vh;
+        position: sticky;
+        top: 0;
+    }
+
+    .top-row {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    .content {
+        padding-top: 2rem !important;
+    }
+}

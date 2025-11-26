@@ -1,0 +1,89 @@
+﻿@using WorkOrderManagementSystem.Data
+@using Microsoft.EntityFrameworkCore
+@inject WorkOrderContext Db
+
+<div class="top-row ps-3 navbar navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="">Work Order System</a>
+    </div>
+</div>
+
+<input type="checkbox" title="Navigation menu" class="navbar-toggler" />
+
+<div class="nav-scrollable" onclick="document.querySelector('.navbar-toggler').click()">
+    <nav class="flex-column">
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">
+                <span class="bi bi-house-door-fill" aria-hidden="true"></span> Home
+            </NavLink>
+        </div>
+
+        <div class="nav-item px-3">
+            <NavLink class="nav-link" href="workorders">
+                <span class="bi bi-list-check" aria-hidden="true"></span> Work Orders
+            </NavLink>
+        </div>
+
+        @if (currentRole == Role.Admin || currentRole == Role.Worker)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="analytics">
+                    <span class="bi bi-graph-up-arrow" aria-hidden="true"></span> Analytics
+                </NavLink>
+            </div>
+        }
+
+        @if (currentRole == Role.Admin)
+        {
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="users">
+                    <span class="bi bi-people-fill" aria-hidden="true"></span> Manage Permissions
+                </NavLink>
+            </div>
+        }
+        
+        <!-- User Info -->
+        <div class="nav-item px-3 mt-auto pt-4 border-top border-secondary">
+            <div class="text-light small px-3 py-2">
+                <div class="fw-bold mb-1">@currentUsername</div>
+                <span class="badge rounded-pill" style="@GetRoleBadgeStyle()">
+                    <i class="bi @GetRoleIcon() me-1"></i>@currentRole
+                </span>
+            </div>
+        </div>
+    </nav>
+</div>
+
+@code {
+    private Role currentRole = Role.User;
+    private string currentUsername = "Guest";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            currentUsername = System.Security.Principal.WindowsIdentity.GetCurrent()?.Name ?? Environment.UserName;
+        }
+        catch
+        {
+            currentUsername = "Guest";
+        }
+
+        var userRole = await Db.UserRoles.FirstOrDefaultAsync(u => u.Username == currentUsername);
+        currentRole = userRole?.Role ?? Role.User;
+    }
+
+    private string GetRoleBadgeStyle() => currentRole switch
+    {
+        Role.Admin => "background: linear-gradient(135deg, #f43f5e 0%, #fb7185 100%);",
+        Role.Worker => "background: linear-gradient(135deg, #0ea5e9 0%, #38bdf8 100%);",
+        _ => "background: linear-gradient(135deg, #64748b 0%, #94a3b8 100%);"
+    };
+
+    private string GetRoleIcon() => currentRole switch
+    {
+        Role.Admin => "bi-shield-fill-check",
+        Role.Worker => "bi-wrench",
+        _ => "bi-person-fill"
+    };
+}

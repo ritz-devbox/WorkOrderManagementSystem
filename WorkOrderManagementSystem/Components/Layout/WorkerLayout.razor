@@ -1,0 +1,65 @@
+@inherits LayoutComponentBase
+@using WorkOrderManagementSystem.Services
+@using WorkOrderManagementSystem.Data
+@inject NavigationManager Nav
+@inject SessionService Session
+
+<div class="page">
+    <div class="sidebar worker-sidebar">
+        <div class="top-row ps-3 navbar navbar-dark">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="/worker/dashboard">
+                    <i class="bi bi-wrench-adjustable me-2"></i>Worker Portal
+                </a>
+            </div>
+        </div>
+        <nav class="flex-column">
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/worker/dashboard" Match="NavLinkMatch.All">
+                    <span class="bi bi-speedometer2" aria-hidden="true"></span> Dashboard
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/worker/inspections">
+                    <span class="bi bi-clipboard-check" aria-hidden="true"></span> Inspections
+                </NavLink>
+            </div>
+            <div class="nav-item px-3">
+                <NavLink class="nav-link" href="/worker/orders">
+                    <span class="bi bi-list-check" aria-hidden="true"></span> My Orders
+                </NavLink>
+            </div>
+        </nav>
+    </div>
+
+    <main>
+        <div class="top-row px-4">
+            <div class="user-profile d-flex align-items-center gap-3">
+                <div class="d-flex align-items-center">
+                    <div class="avatar bg-primary bg-opacity-10 text-primary rounded-circle me-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                        <i class="bi bi-person-fill"></i>
+                    </div>
+                    <div>
+                        <div class="fw-bold small">@Session.CurrentUser?.FullName</div>
+                        <div class="text-muted" style="font-size: 0.75rem;">Worker Account</div>
+                    </div>
+                </div>
+                <button class="btn btn-sm btn-outline-danger border-0" @onclick="Logout" title="Sign Out">
+                    <i class="bi bi-box-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+
+        <article class="content px-4">
+            @Body
+        </article>
+    </main>
+</div>
+
+@code {
+    private void Logout()
+    {
+        Session.Logout();
+        Nav.NavigateTo("/worker/login");
+    }
+}
