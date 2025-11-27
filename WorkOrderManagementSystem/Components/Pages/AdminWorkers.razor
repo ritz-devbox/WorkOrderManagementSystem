@@ -102,7 +102,7 @@
                     <button type="button" class="btn-close" @onclick="CloseModal"></button>
                 </div>
                 <div class="modal-body">
-                    <EditForm Model="newWorker" OnValidSubmit="AddWorker">
+                    <EditForm Model="newWorker" OnValidSubmit="AddWorker" FormName="addWorkerForm">
                         <DataAnnotationsValidator />
                         
                         <div class="mb-3">

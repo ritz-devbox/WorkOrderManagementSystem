@@ -36,7 +36,7 @@
                             </div>
                         }
 
-                        <EditForm Model="loginModel" OnValidSubmit="HandleLogin">
+                        <EditForm Model="loginModel" OnValidSubmit="HandleLogin" FormName="workerLoginForm">
                             <DataAnnotationsValidator />
 
                             <div class="mb-4">
@@ -118,7 +118,9 @@
 </div>
 
 @code {
-    private LoginModel loginModel = new();
+    [SupplyParameterFromForm]
+    private LoginModel loginModel { get; set; } = new();
+    
     private string errorMessage = "";
     private bool isLoading = false;
 
@@ -167,8 +169,13 @@
             Session.Login(account, token);
 
             Console.WriteLine("Session logged in. Navigating to dashboard...");
-            // Redirect to worker dashboard
-            Nav.NavigateTo("/worker/dashboard");
+            // Redirect to worker dashboard - NavigationException is expected here
+            Nav.NavigateTo("/worker/dashboard", forceLoad: true);
+        }
+        catch (Microsoft.AspNetCore.Components.NavigationException)
+        {
+            // This is expected - navigation is happening successfully
+            // Don't show an error to the user
         }
         catch (Exception ex)
         {

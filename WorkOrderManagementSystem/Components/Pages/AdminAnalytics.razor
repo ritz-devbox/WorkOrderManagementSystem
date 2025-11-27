@@ -1,0 +1,340 @@
+@page "/admin/analytics"
+@using WorkOrderManagementSystem.Services
+@using WorkOrderManagementSystem.Data
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Admin")]
+@inject AnalyticsService AnalyticsService
+@layout Layout.AdminLayout
+
+<PageTitle>Analytics Dashboard</PageTitle>
+
+<div class="container-fluid p-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h1 class="h2 mb-0 fw-bold text-gradient">Analytics Dashboard</h1>
+            <p class="text-muted">Real-time insights and performance metrics</p>
+        </div>
+        <button class="btn btn-outline-primary" @onclick="LoadData">
+            <i class="bi bi-arrow-clockwise me-2"></i>Refresh
+        </button>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-3 text-muted">Crunching the numbers...</p>
+        </div>
+    }
+    else if (data == null)
+    {
+        <div class="alert alert-warning">Unable to load analytics data.</div>
+    }
+    else
+    {
+        <!-- KPI Cards -->
+        <div class="row g-4 mb-4">
+            <div class="col-md-3">
+                <div class="card h-100 border-0 shadow-sm hover-lift">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="icon-shape bg-primary bg-opacity-10 text-primary rounded-3 p-2 me-3">
+                                <i class="bi bi-clipboard-data fs-4"></i>
+                            </div>
+                            <h6 class="card-title mb-0 text-muted text-uppercase small fw-bold">Total Orders</h6>
+                        </div>
+                        <h2 class="display-6 fw-bold mb-0">@data.TotalWorkOrders</h2>
+                        <div class="mt-2">
+                            <span class="badge bg-success bg-opacity-10 text-success">
+                                <i class="bi bi-arrow-up-short"></i> All time
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 border-0 shadow-sm hover-lift">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="icon-shape bg-warning bg-opacity-10 text-warning rounded-3 p-2 me-3">
+                                <i class="bi bi-hourglass-split fs-4"></i>
+                            </div>
+                            <h6 class="card-title mb-0 text-muted text-uppercase small fw-bold">Pending</h6>
+                        </div>
+                        <h2 class="display-6 fw-bold mb-0">@data.PendingWorkOrders</h2>
+                        <div class="mt-2">
+                            <span class="text-muted small">Requires attention</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 border-0 shadow-sm hover-lift">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="icon-shape bg-success bg-opacity-10 text-success rounded-3 p-2 me-3">
+                                <i class="bi bi-check-circle fs-4"></i>
+                            </div>
+                            <h6 class="card-title mb-0 text-muted text-uppercase small fw-bold">Completed</h6>
+                        </div>
+                        <h2 class="display-6 fw-bold mb-0">@data.CompletedWorkOrders</h2>
+                        <div class="mt-2">
+                            <span class="badge bg-success bg-opacity-10 text-success">
+                                @data.CompletionRate.ToString("0.0")% Rate
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card h-100 border-0 shadow-sm hover-lift">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center mb-2">
+                            <div class="icon-shape bg-info bg-opacity-10 text-info rounded-3 p-2 me-3">
+                                <i class="bi bi-clock-history fs-4"></i>
+                            </div>
+                            <h6 class="card-title mb-0 text-muted text-uppercase small fw-bold">Avg Resolution</h6>
+                        </div>
+                        <h2 class="display-6 fw-bold mb-0">
+                            @if (data.AverageResolutionTime.TotalHours < 1)
+                            {
+                                <span>@data.AverageResolutionTime.Minutes m</span>
+                            }
+                            else
+                            {
+                                <span>@data.AverageResolutionTime.TotalHours.ToString("0.0") h</span>
+                            }
+                        </h2>
+                        <div class="mt-2">
+                            <span class="text-muted small">Per completed ticket</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4 mb-4">
+            <!-- Category Breakdown -->
+            <div class="col-md-6">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4">
+                        <h5 class="card-title fw-bold mb-0">Work Orders by Category</h5>
+                    </div>
+                    <div class="card-body px-4 pb-4">
+                        @if (data.OrdersByCategory.Any())
+                        {
+                            <div class="d-flex flex-column gap-3">
+                                @foreach (var cat in data.OrdersByCategory)
+                                {
+                                    var percent = data.TotalWorkOrders > 0 ? (double)cat.Count / data.TotalWorkOrders * 100 : 0;
+                                    <div>
+                                        <div class="d-flex justify-content-between mb-1">
+                                            <span class="fw-medium">@cat.CategoryName</span>
+                                            <span class="text-muted small">@cat.Count (@percent.ToString("0")%)</span>
+                                        </div>
+                                        <div class="progress" style="height: 8px;">
+                                            <div class="progress-bar bg-primary" role="progressbar" style="width: @percent%" aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100"></div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="text-muted text-center my-4">No category data available.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Priority Breakdown -->
+            <div class="col-md-6">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4">
+                        <h5 class="card-title fw-bold mb-0">Work Orders by Priority</h5>
+                    </div>
+                    <div class="card-body px-4 pb-4">
+                        @if (data.OrdersByPriority.Any())
+                        {
+                            <div class="list-group list-group-flush">
+                                @foreach (var p in data.OrdersByPriority)
+                                {
+                                    <div class="list-group-item d-flex justify-content-between align-items-center px-0 py-3 border-bottom-0">
+                                        <div class="d-flex align-items-center">
+                                            <span class="badge rounded-pill me-3 p-2 @GetPriorityBadgeClass(p.Priority)">
+                                                <i class="@GetPriorityIcon(p.Priority)"></i>
+                                            </span>
+                                            <span class="fw-medium">@p.Priority</span>
+                                        </div>
+                                        <span class="badge bg-light text-dark rounded-pill fs-6">@p.Count</span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="text-muted text-center my-4">No priority data available.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row g-4">
+            <!-- Top Workers -->
+            <div class="col-md-6">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4">
+                        <h5 class="card-title fw-bold mb-0">Top Performing Workers</h5>
+                    </div>
+                    <div class="card-body px-4 pb-4">
+                        @if (data.TopWorkers.Any())
+                        {
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Worker</th>
+                                            <th class="text-end">Completed Orders</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var worker in data.TopWorkers)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <div class="d-flex align-items-center">
+                                                        <div class="avatar bg-primary text-white rounded-circle me-3 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+                                                            @worker.WorkerName.Substring(0, 1).ToUpper()
+                                                        </div>
+                                                        <span class="fw-medium">@worker.WorkerName</span>
+                                                    </div>
+                                                </td>
+                                                <td class="text-end fw-bold">@worker.CompletedCount</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="text-muted text-center my-4">No worker data available.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- 7-Day Trend (Simple CSS Bar Chart) -->
+            <div class="col-md-6">
+                <div class="card h-100 border-0 shadow-sm">
+                    <div class="card-header bg-transparent border-0 pt-4 px-4">
+                        <h5 class="card-title fw-bold mb-0">Last 7 Days Trend</h5>
+                    </div>
+                    <div class="card-body px-4 pb-4 d-flex align-items-end justify-content-center" style="min-height: 250px;">
+                        @if (data.OrdersLast7Days.Any())
+                        {
+                            var maxCount = data.OrdersLast7Days.Max(d => d.Count);
+                            maxCount = maxCount == 0 ? 1 : maxCount; // Avoid divide by zero
+
+                            <div class="d-flex justify-content-between w-100 h-100 align-items-end gap-2">
+                                @foreach (var day in data.OrdersLast7Days)
+                                {
+                                    var heightPercent = (double)day.Count / maxCount * 100;
+                                    <div class="d-flex flex-column align-items-center flex-grow-1">
+                                        <div class="text-muted small mb-1 fw-bold">@day.Count</div>
+                                        <div class="w-100 bg-primary bg-opacity-75 rounded-top" 
+                                             style="height: @(Math.Max(heightPercent, 2))%; transition: height 0.5s ease; min-height: 4px;">
+                                        </div>
+                                        <div class="text-muted small mt-2 text-center" style="font-size: 0.75rem;">@day.Date.ToString("MMM dd")</div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        else
+                        {
+                            <p class="text-muted text-center my-4">No trend data available.</p>
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+<style>
+    .text-gradient {
+        background: linear-gradient(135deg, #1e293b 0%, #475569 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .hover-lift {
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .hover-lift:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1) !important;
+    }
+    .icon-shape {
+        width: 48px;
+        height: 48px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+</style>
+
+@code {
+    private AnalyticsDashboardData? data;
+    private bool isLoading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        isLoading = true;
+        try
+        {
+            // Simulate a small delay for better UX (so spinner shows)
+            await Task.Delay(500);
+            data = await AnalyticsService.GetDashboardDataAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading analytics: {ex.Message}");
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private string GetPriorityBadgeClass(WorkOrderPriority priority)
+    {
+        return priority switch
+        {
+            WorkOrderPriority.Low => "bg-success bg-opacity-10 text-success",
+            WorkOrderPriority.Medium => "bg-warning bg-opacity-10 text-warning",
+            WorkOrderPriority.High => "bg-danger bg-opacity-10 text-danger",
+            WorkOrderPriority.Critical => "bg-danger text-white",
+            _ => "bg-secondary bg-opacity-10 text-secondary"
+        };
+    }
+
+    private string GetPriorityIcon(WorkOrderPriority priority)
+    {
+        return priority switch
+        {
+            WorkOrderPriority.Low => "bi bi-thermometer-low",
+            WorkOrderPriority.Medium => "bi bi-thermometer-half",
+            WorkOrderPriority.High => "bi bi-thermometer-high",
+            WorkOrderPriority.Critical => "bi bi-exclamation-triangle-fill",
+            _ => "bi bi-circle"
+        };
+    }
+}

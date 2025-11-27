@@ -118,7 +118,9 @@
 </div>
 
 @code {
-    private LoginModel loginModel = new();
+    [SupplyParameterFromForm]
+    private LoginModel loginModel { get; set; } = new();
+    
     private string errorMessage = "";
     private bool isLoading = false;
 
@@ -160,8 +162,13 @@
             var token = AuthService.GenerateSessionToken();
             Session.Login(account, token);
 
-            // Redirect to admin dashboard
-            Nav.NavigateTo("/admin/dashboard");
+            // Redirect to admin dashboard - NavigationException is expected here
+            Nav.NavigateTo("/admin/dashboard", forceLoad: true);
+        }
+        catch (Microsoft.AspNetCore.Components.NavigationException)
+        {
+            // This is expected - navigation is happening successfully
+            // Don't show an error to the user
         }
         catch (Exception ex)
         {

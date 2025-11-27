@@ -16,10 +16,11 @@ builder.Services.AddDbContext<WorkOrderContext>(options =>
 // Add custom services
 builder.Services.AddScoped<WorkOrderManagementSystem.Services.ExportService>();
 builder.Services.AddScoped<WorkOrderManagementSystem.Services.AuthService>();
-builder.Services.AddScoped<WorkOrderManagementSystem.Services.SessionService>();
+builder.Services.AddSingleton<WorkOrderManagementSystem.Services.SessionService>();
 builder.Services.AddScoped<WorkOrderManagementSystem.Services.FileService>();
 builder.Services.AddScoped<WorkOrderManagementSystem.Services.SmartTriageService>();
 builder.Services.AddScoped<WorkOrderManagementSystem.Services.QRCodeService>();
+builder.Services.AddScoped<WorkOrderManagementSystem.Services.AnalyticsService>();
 builder.Services.AddSingleton<WorkOrderManagementSystem.Services.NotificationService>();
 
 // Add Negotiate (Windows) authentication
@@ -33,7 +34,7 @@ using (var scope = app.Services.CreateScope())
     var db = scope.ServiceProvider.GetRequiredService<WorkOrderContext>();
     db.Database.EnsureCreated();
 
-    // Explicitly seed data if missing (fixes issue where EnsureCreated doesn't seed if DB exists but is empty/old)
+    // Explicitly seed data if missing
     if (!db.WorkerAccounts.Any())
     {
         Console.WriteLine("Seeding WorkerAccounts...");
@@ -64,10 +65,6 @@ using (var scope = app.Services.CreateScope())
         db.SaveChanges();
         Console.WriteLine("WorkerAccounts seeded successfully.");
     }
-    else
-    {
-        Console.WriteLine("WorkerAccounts already exist. Skipping seed.");
-    }
 
     if (!db.Categories.Any())
     {
@@ -88,7 +85,6 @@ using (var scope = app.Services.CreateScope())
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
     app.UseHsts();
 }
 
